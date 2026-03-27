@@ -1,114 +1,148 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MdSend } from 'react-icons/md';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { MdSend, MdRefresh, MdPhone } from 'react-icons/md';
+import { FaWhatsapp } from 'react-icons/fa';
+import { supabase } from '../supabaseClient';
 import { useLeads } from '../hooks/useLeads';
 
 export default function MessagesPage() {
   const { leads, loading } = useLeads();
   const [activeIdx, setActiveIdx] = useState(0);
   const [input, setInput] = useState('');
-  const [messagesMap, setMessagesMap] = useState({});
+  const [messages, setMessages] = useState([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef(null);
 
-  // When leads load, seed each lead's thread with their message if any
+  const activeLead = leads[activeIdx];
+
+  const fetchMessages = useCallback(async (leadId) => {
+    if (!leadId) return;
+    setLoadingMessages(true);
+    const { data, error } = await supabase
+      .from('ttp_messages')
+      .select('*')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: true });
+    
+    setLoadingMessages(false);
+    if (!error) setMessages(data || []);
+  }, []);
+
   useEffect(() => {
-    if (leads.length === 0) return;
-    setMessagesMap(prev => {
-      const next = { ...prev };
-      leads.forEach(l => {
-        if (!next[l.id] && l.message) {
-          next[l.id] = [{
-            id: `seed-${l.id}`,
-            text: l.message,
-            mine: false,
-            time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-          }];
-        } else if (!next[l.id]) {
-          next[l.id] = [];
-        }
-      });
-      return next;
-    });
-  }, [leads]);
+    if (activeLead) {
+      fetchMessages(activeLead.id);
+      
+      // Realtime subscription for the current lead's messages
+      const channel = supabase
+        .channel(`messages_${activeLead.id}`)
+        .on('postgres_changes', 
+          { event: 'INSERT', schema: 'public', table: 'ttp_messages', filter: `lead_id=eq.${activeLead.id}` }, 
+          (payload) => {
+            // Only add if not already in list (avoid duplicate local + subscription)
+            setMessages(prev => {
+              if (prev.find(m => m.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [activeLead, fetchMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messagesMap, activeIdx]);
+  }, [messages]);
 
-  const activeLead = leads[activeIdx];
-  const messages = activeLead ? (messagesMap[activeLead.id] || []) : [];
+  const sendMessage = async (e) => {
+    if (e) e.preventDefault();
+    if (!input.trim() || !activeLead || isSending) return;
 
-  const send = () => {
-    if (!input.trim() || !activeLead) return;
-    const msg = {
-      id: Date.now(),
-      text: input.trim(),
-      mine: true,
-      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    };
-    setMessagesMap(prev => ({
-      ...prev,
-      [activeLead.id]: [...(prev[activeLead.id] || []), msg],
-    }));
+    const textToSend = input.trim();
     setInput('');
+    setIsSending(true);
+
+    try {
+      // 1. Log the message in Database (Outbound)
+      const { data: newMsg, error: dbError } = await supabase
+        .from('ttp_messages')
+        .insert([
+          { 
+            lead_id: activeLead.id, 
+            text: textToSend,
+            message_text: textToSend, 
+            direction: 'outgoing' 
+          }
+        ])
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+      
+      // Update local UI immediately for responsiveness
+      setMessages(prev => [...prev, newMsg]);
+
+      // 2. Trigger Interakt via Edge Function
+      // Note: This requires an Edge Function 'send-whatsapp' to be deployed
+      const { error: fnError } = await supabase.functions.invoke('send-whatsapp', {
+        body: { 
+          phone: activeLead.phone, 
+          message: textToSend 
+        }
+      });
+
+      if (fnError) {
+        console.warn('WhatsApp delivery via Interakt failed, used WA fallback button instead');
+      }
+
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const openWhatsAppFallback = () => {
+    if (!activeLead?.phone) return;
+    const msg = encodeURIComponent(input || `Hello ${activeLead.name}! 👋 This is Shraddha Institute.`);
+    window.open(`https://wa.me/91${activeLead.phone}?text=${msg}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 20, height: 'calc(100vh - 160px)', minHeight: 500 }}
+    <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20, height: 'calc(100vh - 160px)', minHeight: 500 }}
       className="messages-layout">
-      <style>{`@media(max-width:700px){.messages-layout{grid-template-columns:1fr!important}}`}</style>
+      <style>{`
+        @media(max-width:700px){.messages-layout{grid-template-columns:1fr!important}}
+        .msg-outbound { background: var(--gradient); color: #fff; align-self: flex-end; border-radius: 14px 14px 0 14px; }
+        .msg-inbound { background: #fff; color: var(--text-dark); align-self: flex-start; border-radius: 14px 14px 14px 0; border: 1px solid var(--border); }
+      `}</style>
 
-      {/* Contacts */}
+      {/* Leads List */}
       <div className="content-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 15, flexShrink: 0 }}>
-          Leads ({leads.length})
+        <div style={{ padding: '16px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700 }}>Conversations</h3>
+          <span style={{ fontSize: 11, background: 'rgba(255,102,0,0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>{leads.length}</span>
         </div>
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {loading ? (
-            [1,2,3,4,5].map(i => (
-              <div key={i} style={{ padding: '14px 16px', display: 'flex', gap: 10, borderBottom: '1px solid rgba(0,0,0,0.04)', alignItems: 'center' }}>
-                <div className="skeleton" style={{ width: 38, height: 38, borderRadius: '50%', flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div className="skeleton" style={{ width: '60%', height: 12, borderRadius: 4, marginBottom: 6 }} />
-                  <div className="skeleton" style={{ width: '40%', height: 10, borderRadius: 4 }} />
-                </div>
-              </div>
-            ))
-          ) : leads.length === 0 ? (
-            <div className="empty-state" style={{ padding: 24 }}>
-              <div className="empty-icon">👥</div>
-              <p>No leads yet.</p>
-            </div>
+            [1,2,3,4,5].map(i => <div key={i} className="skeleton" style={{ height: 60, margin: '10px 16px', borderRadius: 10 }} />)
           ) : (
             leads.map((lead, i) => (
               <div key={lead.id} onClick={() => setActiveIdx(i)} style={{
-                padding: '12px 16px', cursor: 'pointer', transition: 'all 0.2s',
-                borderBottom: '1px solid rgba(0,0,0,0.04)',
-                background: activeIdx === i ? 'var(--bg-light)' : 'transparent',
+                padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid rgba(0,0,0,0.03)',
+                background: activeIdx === i ? 'rgba(255,102,0,0.04)' : 'transparent',
                 borderLeft: activeIdx === i ? '3px solid var(--primary)' : '3px solid transparent',
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-                    <div style={{
-                      width: 36, height: 36, borderRadius: '50%', background: 'var(--gradient)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0
-                    }}>{(lead.name || '?').charAt(0).toUpperCase()}</div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.name || '—'}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {lead.message ? lead.message.slice(0, 30) + (lead.message.length > 30 ? '…' : '') : lead.phone || 'No message'}
-                      </div>
-                    </div>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>
+                    {(lead.name || '?').charAt(0).toUpperCase()}
                   </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 6 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{lead.city || ''}</div>
-                    {(messagesMap[lead.id] || []).length > 0 && activeIdx !== i && (
-                      <div style={{
-                        width: 18, height: 18, borderRadius: '50%', background: 'var(--primary)',
-                        color: '#fff', fontSize: 10, fontWeight: 700,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: 'auto', marginTop: 4
-                      }}>{(messagesMap[lead.id] || []).length}</div>
-                    )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{lead.city || 'No location'}</div>
                   </div>
                 </div>
               </div>
@@ -117,59 +151,56 @@ export default function MessagesPage() {
         </div>
       </div>
 
-      {/* Chat Window */}
+      {/* Chat Area */}
       <div className="content-card" style={{ padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {!activeLead ? (
           <div className="empty-state" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
             <div className="empty-icon">💬</div>
-            <p>Select a lead to start chatting</p>
+            <p>Select a lead to view history</p>
           </div>
         ) : (
           <>
             {/* Header */}
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, background: '#fff', flexShrink: 0 }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>
-                {(activeLead.name || '?').charAt(0).toUpperCase()}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>{activeLead.name || '—'}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {activeLead.phone || ''}{activeLead.city ? ` · ${activeLead.city}` : ''}{activeLead.program ? ` · ${activeLead.program}` : ''}
+            <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: 'var(--gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>
+                  {(activeLead.name || '?').charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{activeLead.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <MdPhone size={10} /> +91 {activeLead.phone}
+                  </div>
                 </div>
               </div>
-              {activeLead.phone && (
-                <a
-                  href={`https://wa.me/91${activeLead.phone}?text=${encodeURIComponent(`Hello ${activeLead.name}! 👋 This is Shraddha Institute.`)}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="btn btn-whatsapp btn-sm"
-                >
-                  WhatsApp
-                </a>
-              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => fetchMessages(activeLead.id)}>
+                  <MdRefresh size={18} />
+                </button>
+                <button className="btn btn-whatsapp btn-sm" onClick={openWhatsAppFallback}>
+                  <FaWhatsapp /> Open WA App
+                </button>
+              </div>
             </div>
 
-            {/* Messages */}
-            <div style={{ flex: 1, padding: '16px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {messages.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13 }}>
-                  No messages yet. Start the conversation!
+            {/* Messages List */}
+            <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, background: '#fcfaf8' }}>
+              {loadingMessages ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>Loading chat...</div>
+              ) : messages.length === 0 ? (
+                <div className="empty-state" style={{ opacity: 0.6 }}>
+                  <div style={{ fontSize: 32 }}>✨</div>
+                  <p>Send a message to {activeLead.name}</p>
                 </div>
               ) : (
                 messages.map(msg => (
-                  <div key={msg.id} style={{ display: 'flex', justifyContent: msg.mine ? 'flex-end' : 'flex-start', animation: 'fadeInUp 0.2s ease' }}>
-                    <div style={{
-                      maxWidth: '72%', padding: '10px 14px',
-                      borderRadius: msg.mine ? '16px 16px 0 16px' : '16px 16px 16px 0',
-                      background: msg.mine ? 'var(--gradient)' : '#fff',
-                      color: msg.mine ? '#fff' : 'var(--text-dark)',
-                      fontSize: 13, lineHeight: 1.6,
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                      border: msg.mine ? 'none' : '1px solid var(--border)',
-                    }}>
-                      {msg.text}
-                      <div style={{ fontSize: 10, marginTop: 4, textAlign: 'right', opacity: 0.7, color: msg.mine ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)' }}>
-                        {msg.time}
-                      </div>
+                  <div key={msg.id} className={`msg-${msg.direction === 'incoming' || msg.direction === 'inbound' ? 'inbound' : 'outbound'}`} style={{
+                    maxWidth: '75%', padding: '10px 14px', position: 'relative',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.04)',
+                  }}>
+                    <div style={{ fontSize: 13, lineHeight: 1.5 }}>{msg.text || msg.message_text}</div>
+                    <div style={{ fontSize: 9, marginTop: 4, textAlign: 'right', opacity: 0.8 }}>
+                      {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
                 ))
@@ -177,20 +208,25 @@ export default function MessagesPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
-            <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+            {/* Input Overlay */}
+            <form onSubmit={sendMessage} style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', background: '#fff', display: 'flex', gap: 10 }}>
               <input
                 className="form-input"
-                style={{ flex: 1 }}
-                placeholder="Type a message..."
+                placeholder={`Chat with ${activeLead.name.split(' ')[0]}...`}
+                style={{ flex: 1, height: 46 }}
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && send()}
               />
-              <button className="btn btn-primary" onClick={send} style={{ padding: '10px 14px' }}>
-                <MdSend />
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                style={{ height: 46, padding: '0 20px' }}
+                disabled={!input.trim() || isSending}
+              >
+                <MdSend size={20} style={{ marginRight: 8 }} />
+                {isSending ? 'Sending...' : 'Send'}
               </button>
-            </div>
+            </form>
           </>
         )}
       </div>

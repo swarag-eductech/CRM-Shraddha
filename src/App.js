@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
@@ -11,31 +12,16 @@ import SettingsPage from './pages/SettingsPage';
 import TodayTasksPage from './pages/TodayTasksPage';
 import LeadsKanbanPage from './pages/LeadsKanbanPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import AdminDashboard from './pages/AdminDashboard';
 
-function App() {
-  const [activePage, setActivePage] = useState('dashboard');
-  const [mobileOpen, setMobileOpen] = useState(false);
+// New Login & Protection Components
+import LoginPage from './pages/AdminLoginPage'; // Using existing admin login page for overall entry
+import ProtectedRoute from './components/ProtectedRoute';
 
-  const renderPage = () => {
-    switch (activePage) {
-      case 'dashboard': return <DashboardPage setActivePage={setActivePage} />;
-      case 'leads':     return <LeadsPage />;
-      case 'meetings':  return <MeetingsPage />;
-      case 'whatsapp':  return <WhatsAppPage />;
-      case 'messages':  return <MessagesPage />;
-      case 'todaytasks': return <TodayTasksPage />;
-      case 'kanban':     return <LeadsKanbanPage />;
-      case 'analytics':  return <AnalyticsPage />;
-      case 'settings':  return <SettingsPage />;
-      default:          return <DashboardPage setActivePage={setActivePage} />;
-    }
-  };
-
+function Layout({ children, activePage, mobileOpen, setMobileOpen }) {
   return (
     <div className="crm-layout">
       <Sidebar
-        activePage={activePage}
-        setActivePage={setActivePage}
         mobileOpen={mobileOpen}
         closeMobile={() => setMobileOpen(false)}
       />
@@ -45,10 +31,80 @@ function App() {
           openMobile={() => setMobileOpen(true)}
         />
         <main className="crm-content">
-          {renderPage()}
+          {children}
         </main>
       </div>
     </div>
+  );
+}
+
+function App() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Entry Login Page */}
+        <Route path="/login" element={<LoginPage />} />
+        
+        {/* All CRM Routes are now Protected */}
+        <Route path="/" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="dashboard" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><DashboardPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/leads" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="leads" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><LeadsPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/kanban" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="kanban" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><LeadsKanbanPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/meetings" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="meetings" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><MeetingsPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/todaytasks" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="todaytasks" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><TodayTasksPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/analytics" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="analytics" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><AnalyticsPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/whatsapp" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="whatsapp" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><WhatsAppPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/messages" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="messages" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><MessagesPage /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/settings" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="settings" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><SettingsPage /></Layout>
+          </ProtectedRoute>
+        } />
+        
+        {/* Dedicated Admin Dashboard */}
+        <Route path="/admin" element={
+          <ProtectedRoute requireAdmin={true}>
+            <Layout activePage="admin" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><AdminDashboard /></Layout>
+          </ProtectedRoute>
+        } />
+
+        {/* Fallback to Dashboard/Login */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

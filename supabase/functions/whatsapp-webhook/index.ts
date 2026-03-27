@@ -105,8 +105,8 @@ serve(async (req: Request) => {
         .from("ttp_messages")
         .insert({
           lead_id: leadId,
-          message_text: messageText,
-          direction: "inbound", // Exactly as requested
+          text: messageText,
+          direction: "incoming", // normalized to DB constraint
           created_at: new Date().toISOString()
         });
       if (msgErr) console.error("[webhook] Error saving message:", msgErr.message);

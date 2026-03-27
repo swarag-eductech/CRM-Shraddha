@@ -300,7 +300,7 @@ export default function LeadModal({ lead, onClose, onUpdated }) {
                       border: m.direction === 'outgoing' ? '1.5px solid #fed7aa' : '1.5px solid #bbf7d0',
                       color: m.direction === 'outgoing' ? '#92400e' : '#166534', fontSize: 12,
                     }}>
-                      <div>{m.message_text}</div>
+                      <div>{m.text || m.message_text}</div>
                       <div style={{ fontSize: 10, opacity: 0.65, marginTop: 3 }}>{formatIST(m.created_at).timeOnly}</div>
                     </div>
                   </div>
@@ -327,7 +327,7 @@ export default function LeadModal({ lead, onClose, onUpdated }) {
                 if (item._type === 'message') {
                   icon = item.direction === 'incoming' ? '💬' : '✏️';
                   label = item.direction === 'incoming' ? 'WhatsApp Message' : 'Note Sent';
-                  detail = item.message_text;
+                  detail = item.text || item.message_text;
                 } else if (item._type === 'followup') {
                   icon = '📅'; label = `Follow-up #${item.followup_number}`;
                   detail = item.note || `Scheduled: ${formatIST(item.next_followup_at).shortDT}`;

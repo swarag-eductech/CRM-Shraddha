@@ -12,6 +12,7 @@ const pageTitles = {
   whatsapp:   { title: 'WhatsApp',     sub: 'Send messages and follow-ups' },
   messages:   { title: 'Messages',     sub: 'Internal messages & notes' },
   settings:   { title: 'Settings',     sub: 'Configure your CRM preferences' },
+  admin:      { title: 'Admin Control', sub: 'Teacher & Meeting Coordination' },
 };
 
 function timeAgo(ts) {

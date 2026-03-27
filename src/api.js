@@ -254,7 +254,7 @@ export async function getMessages(leadId) {
 export async function addMessage({ leadId, messageText, direction = 'outgoing' }) {
   const { data, error } = await supabase
     .from('ttp_messages')
-    .insert([{ lead_id: leadId, message_text: messageText, direction }])
+    .insert([{ lead_id: leadId, text: messageText, message_text: messageText, direction }])
     .select()
     .single();
   if (error) throw error;

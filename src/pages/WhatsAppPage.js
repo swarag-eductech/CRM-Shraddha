@@ -6,22 +6,22 @@ const templates = [
   {
     label: 'Welcome / Enquiry',
     icon: '👋',
-    message: `Hello {name}! 👋\n\nThank you for your interest in *Shraddha Institute*.\n\nWe are proud to offer expert coaching for:\n📚 CA Foundation, Inter & Final\n📊 CMA Foundation, Inter & Final\n⚖️ CS Foundation & Executive\n\nWould you like to schedule a FREE counselling session?\n\nReply *YES* to proceed.\n\n– Shraddha Institute Team`,
+    message: `Hello {name}! 👋\n\nThank you for your interest in *Shraddha Institute*.\n\nWe specialize in professional Teacher Training for:\n🧮 *Abacus Mental Math*\n✨ *Vedic Mathematics*\n\nWould you like to schedule a FREE demo session to see our training methodology?\n\nReply *YES* to proceed.\n\n– Shraddha Institute Team`,
   },
   {
     label: 'Meeting Reminder',
     icon: '📅',
-    message: `Hello {name}! 🙏\n\nThis is a reminder for your upcoming meeting with *Shraddha Institute*.\n\n🕐 Time: [Date & Time]\n🔗 Link: [Meet Link]\n\nPlease join 2 minutes early.\n\nSee you soon! 😊\n– Shraddha Institute`,
+    message: `Hello {name}! 🙏\n\nThis is a reminder for your upcoming *Teacher Training* session with *Shraddha Institute*.\n\n🕐 Time: [Date & Time]\n🔗 Link: [Meet Link]\n\nPlease join 2 minutes early with your Abacus tool/notebook.\n\nSee you soon! 😊\n– Shraddha Institute`,
   },
   {
     label: 'Follow-Up',
     icon: '🔔',
-    message: `Hi {name}! 😊\n\nWe noticed you showed interest in our courses. We'd love to help you *start your journey* with Shraddha Institute!\n\n✅ Expert Faculty\n✅ Study Material Included\n✅ Online + Offline Classes\n✅ Flexible Batches\n\nLimited seats available! Book now 🎯\n\nCall: 99XXXXXXXX\n– Shraddha Institute`,
+    message: `Hi {name}! 😊\n\nWe noticed you enquired about our *Abacus & Vedic Math Teacher Training*.\n\nWhy start your journey now?\n✅ High Demand for Teachers\n✅ Work from Home / Offline\n✅ Certification included\n✅ Business Support Provided\n\nStart your own classes after training! 🎓🎯\n\nCall/WhatsApp: 99XXXXXXXX\n– Shraddha Institute`,
   },
   {
     label: 'Converted / Welcome',
     icon: '🎉',
-    message: `Congratulations {name}! 🎉\n\nWelcome to the *Shraddha Institute Family*! 🎓\n\nYour enrollment is confirmed. Here's what's next:\n\n📌 Orientation: [Date]\n📌 Batch Start: [Date]\n📌 Study Material: Provided on Day 1\n\nFor queries: 99XXXXXXXX\n\nWishing you great success! 🌟\n– Shraddha Institute`,
+    message: `Congratulations {name}! 🎉\n\nWelcome to the *Shraddha Institute Teacher Training Program*! 🧮📖\n\nYour enrollment is confirmed. Here's what's next:\n\n📌 Orientation: [Date]\n📌 Batch Start: [Date]\n📌 Training Kits: Sent to your address\n\nFor any support: 99XXXXXXXX\n\nLet's empower students together! 🌟\n– Shraddha Institute`,
   },
 ];
 
