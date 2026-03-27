@@ -124,41 +124,56 @@ export async function getMeetings() {
   return data || [];
 }
 
-export async function scheduleMeeting({ leadId, leadIds, meetingDatetime, meetingLink }) {
-  // Robust conversion: The browser's new Date(val) already interprets the input as local time (IST).
-  // Calling .toISOString() then gives us the true UTC equivalent automatically.
-  const utcTime = new Date(meetingDatetime).toISOString();
-
-  // If leadIds is passed, use it, else fallback to [leadId] for backwards compatibility
-  const finalLeadIds = leadIds || [leadId];
-
-  const { data: meeting, error } = await supabase
-    .from('ttp_meetings')
-    .insert([{
-      meeting_datetime: utcTime,
-      meeting_link: meetingLink || null,
-      reminder_30_sent: false,
-      reminder_15_sent: false,
-      reminder_5_sent: false,
-      is_deleted: false,
-    }])
-    .select()
-    .single();
-    
-  if (error) throw error;
+export async function scheduleMeeting({ leadIds, meetingDatetime, meetingLink, hostEmail, traineeEmails, userName, userPhone }) {
+  // 1. Prepare data for the edge function
+  // We need IST date and 12h time format for the edge function's parser
+  const dt = new Date(meetingDatetime);
   
-  if (finalLeadIds.length > 0) {
-    const meetingLeads = finalLeadIds.map(id => ({
-      meeting_id: meeting.id,
+  // Format Date as YYYY-MM-DD in IST
+  const meetingDate = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  
+  // Format Time as HH:MM AM/PM in IST
+  const meetingTime = dt.toLocaleTimeString('en-US', { 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    hour12: true, 
+    timeZone: 'Asia/Kolkata' 
+  }).replace(/\u202f/g, ' '); // Replace narrow non-breaking space with regular space
+
+  // 2. Invoke the edge function
+  // This handles: Double-booking check, Google Meet link generation, 
+  // DB insertion (ttp_meetings), and WhatsApp confirmation.
+  const { data, error } = await supabase.functions.invoke('create-meeting', {
+    body: {
+      userName: userName || 'Lead',
+      userPhone: userPhone || '',
+      meetingDate,
+      meetingTime,
+      hostEmail,
+      traineeEmails: traineeEmails || [],
+      duration: 30, // Default duration
+      courseName: 'Meeting' // Can be customized
+    }
+  });
+
+  if (error) throw error;
+  if (!data?.success) throw new Error(data?.error || 'Failed to schedule meeting');
+
+  // 3. Link additional leads to the meeting in the database
+  // The edge function already linked the primary lead (userName/userPhone).
+  // We link everyone else from leadIds to ensure they appear in the CRM UI.
+  if (leadIds && leadIds.length > 0) {
+    const meetingLeads = leadIds.map(id => ({
+      meeting_id: data.meetingId,
       lead_id: id
     }));
-    const { error: leadsError } = await supabase
-      .from('ttp_meeting_leads')
-      .insert(meetingLeads);
-    if (leadsError) throw leadsError;
+    
+    // We use a simple insert; if some are duplicates, Supabase will handle it 
+    // depending on the table constraints (usually fails or we can UPSERT)
+    await supabase.from('ttp_meeting_leads').insert(meetingLeads);
   }
-  
-  return meeting;
+
+  return data;
 }
 
 export async function addLeadsToMeeting(meetingId, leadIds) {

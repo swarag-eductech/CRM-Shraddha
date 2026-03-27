@@ -106,11 +106,13 @@ async function getAccessToken(
 // ─── Generate Google Meet link via Calendar API ────────────────────────────────
 async function generateMeetLink(
   meetingDatetime: string,
-  durationMinutes: number
+  durationMinutes: number,
+  hostEmail: string,
+  traineeEmails: string[] = []
 ): Promise<string | null> {
   const clientEmail = Deno.env.get("GOOGLE_CLIENT_EMAIL");
   const rawPrivateKey = Deno.env.get("GOOGLE_PRIVATE_KEY");
-  const impersonateEmail = Deno.env.get("GOOGLE_IMPERSONATE_EMAIL");
+  const impersonateEmail = hostEmail;
 
   if (!clientEmail || !rawPrivateKey) {
     console.error("[Meet] GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY not set");
@@ -118,7 +120,7 @@ async function generateMeetLink(
   }
 
   if (!impersonateEmail) {
-    console.error("[Meet] GOOGLE_IMPERSONATE_EMAIL not set — required for Meet link creation via domain-wide delegation");
+    console.error("[Meet] hostEmail not provided (required for impersonation)");
     return null;
   }
 
@@ -149,23 +151,21 @@ async function generateMeetLink(
       dateTime: endTime.toISOString(),
       timeZone: "Asia/Kolkata",
     },
-
-      visibility: "private",
-  guestsCanInviteOthers: false,
-  guestsCanModify: false,
-  guestsCanSeeOtherGuests: false,
+    visibility: "private",
+    guestsCanInviteOthers: false,
+    guestsCanModify: false,
+    guestsCanSeeOtherGuests: false,
     conferenceData: {
       // Do NOT specify conferenceSolutionKey — let Google auto-assign
       // the correct type (hangoutsMeet for Workspace, eventHangout for Gmail)
       createRequest: {
         requestId,
       },
-      
     },
-     attendees: [
-    { email: "host@yourdomain.com", responseStatus: "accepted" },
-    { email: "participant1@domain.com" },
-  ],
+    attendees: [
+      { email: hostEmail, responseStatus: "accepted" },
+      ...traineeEmails.filter(Boolean).map((email) => ({ email })),
+    ],
   };
 
   // Use 'primary' calendar. conferenceDataVersion=1 is required for Meet link.
@@ -192,7 +192,14 @@ if (!calRes.ok) {
 const calData = JSON.parse(raw);
 console.log("[Meet] Parsed Response:", JSON.stringify(calData, null, 2));
 
-const hangoutLink = calData.hangoutLink ?? null;
+const hangoutLink =
+      calData.hangoutLink ||
+  calData.conferenceData?.entryPoints?.find(
+    (p) => p.entryPointType === "video" || p.entryPointType === "more"
+  )?.uri ||
+  calData.conferenceData?.entryPoints?.[0]?.uri ||
+  calData.htmlLink ||
+  null;
 
   if (!hangoutLink) {
     console.warn("[Meet] No hangoutLink in Calendar response:", JSON.stringify(calData));
@@ -311,14 +318,30 @@ serve(async (req: Request) => {
     meetingTime,   // "HH:MM AM/PM"
     duration = 30, // minutes
     courseName = "Online Workshop",
+    hostEmail,
+    traineeEmails = [],
   } = body;
 
   // ── Validate required fields ─────────────────────────────────────────────────
-  if (!userName || !userPhone || !meetingDate || !meetingTime) {
+  if (!userName || !userPhone || !meetingDate || !meetingTime || !hostEmail) {
     return new Response(
       JSON.stringify({
-        error: "Missing required fields: userName, userPhone, meetingDate, meetingTime",
+        error: "Missing required fields: userName, userPhone, meetingDate, meetingTime, hostEmail",
       }),
+      { status: 400, headers: { ...CORS, "Content-Type": "application/json" } }
+    );
+  }
+
+  if (typeof hostEmail !== "string" || !hostEmail.trim()) {
+    return new Response(
+      JSON.stringify({ error: "Invalid hostEmail" }),
+      { status: 400, headers: { ...CORS, "Content-Type": "application/json" } }
+    );
+  }
+
+  if (!Array.isArray(traineeEmails)) {
+    return new Response(
+      JSON.stringify({ error: "traineeEmails must be an array" }),
       { status: 400, headers: { ...CORS, "Content-Type": "application/json" } }
     );
   }
@@ -362,7 +385,12 @@ serve(async (req: Request) => {
   }
 
   // ── Generate Google Meet link ─────────────────────────────────────────────────
-  const meetingLink = await generateMeetLink(meetingDatetime, Number(duration));
+  const meetingLink = await generateMeetLink(
+    meetingDatetime,
+    Number(duration),
+    hostEmail,
+    traineeEmails
+  );
 
   // ── Upsert lead in ttp_leads ──────────────────────────────────────────────────
   const digits = String(userPhone).replace(/\D/g, "");

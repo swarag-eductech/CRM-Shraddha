@@ -16,7 +16,13 @@ export default function MeetingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ leadIds: [], meetingDatetime: '', meetingLink: '' });
+  const [form, setForm] = useState({ 
+    leadIds: [], 
+    hostLeadId: '', 
+    traineeLeadIds: [],
+    meetingDatetime: '', 
+    meetingLink: '' 
+  });
   const [error, setError] = useState('');
   
   // Modal for adding leads to an existing meeting
@@ -30,7 +36,7 @@ export default function MeetingsPage() {
   const fetchAll = async () => {
     setLoading(true);
     const [leadRes, meetRes] = await Promise.all([
-      supabase.from('ttp_leads').select('id, name, phone').order('name'),
+      supabase.from('ttp_leads').select('id, name, phone, email').order('name'),
       supabase
         .from('ttp_meetings')
         .select('*, ttp_meeting_leads(ttp_leads(id, name, phone))')
@@ -64,12 +70,25 @@ export default function MeetingsPage() {
     setSaving(true);
     setError('');
     try {
+      const hostLead = leads.find(l => l.id === form.hostLeadId);
+      const firstTrainee = leads.find(l => l.id === form.traineeLeadIds[0]);
+      
+      const traineeEmails = leads
+        .filter(l => form.traineeLeadIds.includes(l.id))
+        .map(l => l.email)
+        .filter(Boolean);
+
       await scheduleMeeting({
-        leadIds: form.leadIds,
+        leadIds: form.leadIds.length > 0 ? form.leadIds : [form.hostLeadId, ...form.traineeLeadIds].filter(Boolean),
         meetingDatetime: form.meetingDatetime,
         meetingLink: form.meetingLink,
+        hostEmail: hostLead?.email,
+        traineeEmails,
+        // The WhatsApp confirmation will be sent to the first trainee (or host if none)
+        userName: (firstTrainee || hostLead)?.name || 'Lead',
+        userPhone: (firstTrainee || hostLead)?.phone || '',
       });
-      setForm({ leadIds: [], meetingDatetime: '', meetingLink: '' });
+      setForm({ leadIds: [], hostLeadId: '', traineeLeadIds: [], meetingDatetime: '', meetingLink: '' });
       setShowForm(false);
       fetchAll();
     } catch (err) {
@@ -91,7 +110,7 @@ export default function MeetingsPage() {
         meetingDatetime: form.meetingDatetime,
         meetingLink: form.meetingLink,
       });
-      setForm({ leadIds: [], meetingDatetime: '', meetingLink: '' });
+      setForm({ leadIds: [], hostLeadId: '', traineeLeadIds: [], meetingDatetime: '', meetingLink: '' });
       setEditingMeeting(null);
       fetchAll();
     } catch (err) {
@@ -188,8 +207,56 @@ export default function MeetingsPage() {
               )}
               <h3>{editingMeeting ? 'Reschedule Meeting' : 'Schedule New Meeting'}</h3>
               <div className="form-grid">
+                <div className="form-group">
+                  <label>Organizing Host *</label>
+                  <select
+                    className="form-input"
+                    value={form.hostLeadId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setForm(f => ({ 
+                        ...f, 
+                        hostLeadId: id,
+                        // If no trainees yet, maybe auto-add the rest of leadIds?
+                        // But let's follow user suggestion: trainee = leadIds excluding host
+                        traineeLeadIds: f.leadIds.filter(lid => lid !== id)
+                      }));
+                    }}
+                    required
+                  >
+                    <option value="">-- Select Host --</option>
+                    {leads.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name} {l.email ? `<${l.email}>` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Trainees/Attendees (Hold Ctrl to select multiple)</label>
+                  <select
+                    multiple
+                    className="form-input"
+                    value={form.traineeLeadIds}
+                    onChange={(e) => {
+                      const vals = Array.from(e.target.selectedOptions, option => option.value);
+                      setForm((f) => {
+                        const newLeadIds = [f.hostLeadId, ...vals].filter(Boolean);
+                        const uniqueLeadIds = [...new Set(newLeadIds)];
+                        return { ...f, traineeLeadIds: vals, leadIds: uniqueLeadIds };
+                      });
+                    }}
+                    style={{ height: '80px' }}
+                  >
+                    {leads.filter(l => l.id !== form.hostLeadId).map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label>Select Leads * (Hold Ctrl/Cmd to select multiple)</label>
+                  <label>Original Lead Selection (Linked to meeting)</label>
                   <select
                     multiple
                     className="form-input"
@@ -198,7 +265,6 @@ export default function MeetingsPage() {
                       const vals = Array.from(e.target.selectedOptions, option => option.value);
                       setForm((f) => ({ ...f, leadIds: vals }));
                     }}
-                    required
                     style={{ height: '100px' }}
                   >
                     {leads.map((l) => (
