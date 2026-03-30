@@ -149,10 +149,11 @@ export async function scheduleMeeting({ leadIds, meetingDatetime, meetingLink, h
       userPhone: userPhone || '',
       meetingDate,
       meetingTime,
-      hostEmail,
+      hostEmail: hostEmail || null,
       traineeEmails: traineeEmails || [],
       duration: 30, // Default duration
-      courseName: 'Meeting' // Can be customized
+      courseName: 'Meeting', // Can be customized
+      meetingLink: meetingLink || null, // pass manual link; skips Google Meet generation if set
     }
   });
 
@@ -262,12 +263,14 @@ export async function addMessage({ leadId, messageText, direction = 'outgoing' }
   // Trigger real WhatsApp delivery if it's outgoing
   if (direction === 'outgoing') {
     try {
-      // Assuming you have a secret setup or allow standard calls
       await supabase.functions.invoke('whatsapp-webhook', {
         body: { 
           manual: true,
           leadId: leadId,
           message: messageText
+        },
+        headers: {
+          'x-interakt-secret': 'mysecret123'
         }
       });
     } catch (e) {
@@ -370,3 +373,29 @@ export async function markAllNotificationsRead() {
     .eq('is_read', false);
   if (error) throw error;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getSettings() {
+  const { data, error } = await supabase
+    .from('ttp_settings')
+    .select('*')
+    .eq('id', 'default')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateSettings(settings) {
+  const { data, error } = await supabase
+    .from('ttp_settings')
+    .update({ ...settings, updated_at: new Date().toISOString() })
+    .eq('id', 'default')
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+

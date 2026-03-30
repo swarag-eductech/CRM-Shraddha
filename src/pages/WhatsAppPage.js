@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { FaWhatsapp } from 'react-icons/fa';
+import React, { useState, useEffect } from 'react';
+import { FaWhatsapp, FaSearch, FaUserCircle } from 'react-icons/fa';
 import { useLeads } from '../hooks/useLeads';
+import { useSearchParams } from 'react-router-dom';
 
 const templates = [
   {
@@ -26,12 +27,33 @@ const templates = [
 ];
 
 export default function WhatsAppPage() {
+  const [searchParams] = useSearchParams();
   const { leads, loading: leadsLoading } = useLeads();
   const quickContacts = leads.filter(l => l.name && l.phone).slice(0, 12);
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
-  const [message, setMessage] = useState(templates[0].message.replace('{name}', 'Student'));
   const [activeTemplate, setActiveTemplate] = useState(0);
+  const [message, setMessage] = useState(templates[0].message.replace('{name}', 'Student'));
+
+  // Effect to handle URL parameters
+  useEffect(() => {
+    const pName = searchParams.get('name');
+    const pPhone = searchParams.get('phone');
+    const pTpl = searchParams.get('template');
+
+    if (pName || pPhone) {
+      if (pName) setName(pName);
+      if (pPhone) setPhone(pPhone.replace(/\D/g, '').slice(-10));
+      
+      const tIdx = pTpl ? parseInt(pTpl) : 0;
+      if (!isNaN(tIdx) && templates[tIdx]) {
+        setActiveTemplate(tIdx);
+        setMessage(templates[tIdx].message.replace('{name}', pName || 'Student'));
+      } else {
+        setMessage(templates[activeTemplate].message.replace('{name}', pName || 'Student'));
+      }
+    }
+  }, [searchParams, activeTemplate]);
 
   const applyTemplate = (idx) => {
     setActiveTemplate(idx);
@@ -41,10 +63,8 @@ export default function WhatsAppPage() {
 
   const updateName = (n) => {
     setName(n);
-    setMessage(msg => msg.replace(/Hello .+?[!👋🙏😊]/u, (m) => {
-      const suffix = m.match(/[!👋🙏😊]/u)?.[0] || '!';
-      return `Hello ${n || 'Student'}${suffix}`;
-    }));
+    // Simple regex to replace the greeting part while keeping the emoji/punctuation
+    setMessage(msg => msg.replace(/^(Hello|Hi|Congratulations)\s+[^!\n?]+([!👋🙏😊🎉])/u, `$1 ${n || 'Student'}$2`));
   };
 
   const sendWhatsApp = () => {
@@ -54,9 +74,13 @@ export default function WhatsAppPage() {
     window.open(`https://wa.me/${num}?text=${msg}`, '_blank', 'noopener,noreferrer');
   };
 
-  const sendToContact = (contact) => {
-    const msg = encodeURIComponent(templates[activeTemplate].message.replace('{name}', contact.name));
-    window.open(`https://wa.me/91${contact.phone}?text=${msg}`, '_blank', 'noopener,noreferrer');
+  const selectLead = (contact) => {
+    setName(contact.name);
+    setPhone(contact.phone.replace(/\D/g, '').slice(-10));
+    const msg = templates[activeTemplate].message.replace('{name}', contact.name);
+    setMessage(msg);
+    // Scroll to top of compose section
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -92,7 +116,27 @@ export default function WhatsAppPage() {
       <div className="wa-compose">
         {/* Compose */}
         <div className="content-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700 }}>Compose Message</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700 }}>Compose Message</h2>
+            {leads.length > 0 && (
+              <div style={{ position: 'relative' }}>
+                <select 
+                  className="form-input" 
+                  style={{ padding: '4px 10px', fontSize: 11, width: 'auto', height: 'auto', background: '#fff7ed', borderColor: '#fed7aa', fontWeight: 600 }}
+                  onChange={(e) => {
+                    const l = leads.find(lead => lead.id === e.target.value);
+                    if (l) selectLead(l);
+                  }}
+                  value=""
+                >
+                  <option value="" disabled>🔍 Select Lead</option>
+                  {leads.map(l => (
+                    <option key={l.id} value={l.id}>{l.name} ({l.phone})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
           <div className="form-group">
             <label>Recipient Name</label>
@@ -131,7 +175,7 @@ export default function WhatsAppPage() {
           <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Message Preview</h2>
           <div className="wa-preview">
             <div className="wa-bubble">
-              {message}
+              <div style={{ whiteSpace: 'pre-wrap' }}>{message}</div>
               <div className="wa-time">
                 {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} ✓✓
               </div>
@@ -147,14 +191,14 @@ export default function WhatsAppPage() {
       <div className="content-card">
         <div className="section-header">
           <div>
-            <h2>Quick Send</h2>
-            <p>Send the selected template to recent leads</p>
+            <h2>Quick Select</h2>
+            <p>Load lead details into the compose form</p>
           </div>
           <span style={{
             background: 'rgba(37,211,102,0.1)', color: '#25D366', padding: '5px 12px',
             borderRadius: 20, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6
           }}>
-            <FaWhatsapp /> WhatsApp
+            <FaWhatsapp /> Quick Select
           </span>
         </div>
         {leadsLoading ? (
@@ -166,24 +210,25 @@ export default function WhatsAppPage() {
         ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
           {quickContacts.map(contact => (
-            <div key={contact.phone} style={{
+            <div key={contact.id || contact.phone} style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '12px 16px', background: 'var(--bg-light)',
-              borderRadius: 12, border: '1px solid var(--border)'
-            }}>
+              borderRadius: 12, border: '1px solid var(--border)',
+              cursor: 'pointer'
+            }} onClick={() => selectLead(contact)}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{
                   width: 36, height: 36, borderRadius: 10, background: 'var(--gradient)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   color: '#fff', fontWeight: 700, fontSize: 14
-                }}>{contact.name.charAt(0)}</div>
+                }}>{(contact.name || '?').charAt(0)}</div>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{contact.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>+91 {contact.phone}</div>
                 </div>
               </div>
-              <button className="btn btn-whatsapp btn-sm" onClick={() => sendToContact(contact)}>
-                <FaWhatsapp />
+              <button className="btn btn-primary btn-sm" style={{ padding: '4px 8px', fontSize: 10 }}>
+                Select
               </button>
             </div>
           ))}

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MdNotifications, MdSecurity, MdPalette, MdPerson,
   MdSave, MdPeople, MdLocationOn, MdSchool
 } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { useLeads } from '../hooks/useLeads';
+import { getSettings, updateSettings } from '../api';
 
 function Toggle({ on, onToggle }) {
   return (
@@ -13,9 +14,10 @@ function Toggle({ on, onToggle }) {
 }
 
 export default function SettingsPage() {
+  const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState({
     name: 'Shraddha Admin',
-    email: 'admin@shraddhainstitute.com',
+    email: 'info@shraddhainstitute.in',
     phone: '9900000000',
     institute: 'Shraddha Institute',
   });
@@ -40,14 +42,78 @@ export default function SettingsPage() {
     reminderTime: '24',
   });
 
+  // Fetch settings from DB
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await getSettings();
+        if (s) {
+          setProfile({
+            name: s.name || 'Shraddha Admin',
+            email: s.admin_email || 'info@shraddhainstitute.in',
+            phone: s.admin_phone || '9900000000',
+            institute: s.institute_name || 'Shraddha Institute',
+          });
+          setNotifs({
+            newLead: s.new_lead_alert,
+            meetingReminder: s.meeting_reminders,
+            whatsappReply: s.whatsapp_replies,
+            weeklyReport: s.weekly_report,
+          });
+          setToggles({
+            darkMode: s.dark_mode,
+            compactSidebar: s.compact_sidebar,
+            autoReminder: s.auto_reminders_enabled,
+            twoFactor: s.two_factor_auth,
+          });
+          setWaSettings({
+            apiKey: s.whatsapp_api_key || '',
+            defaultMessage: s.default_message_template || 'Hello {name}! Thank you for your interest in Shraddha Institute.',
+            reminderTime: String(s.auto_reminder_hours || '24'),
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load settings:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
   const toggle = (key) => setToggles(t => ({ ...t, [key]: !t[key] }));
   const toggleNotif = (key) => setNotifs(n => ({ ...n, [key]: !n[key] }));
 
   const { leads, loading: leadsLoading } = useLeads();
   const [saved, setSaved] = useState(false);
-  const save = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateSettings({
+        name: profile.name,
+        admin_email: profile.email,
+        admin_phone: profile.phone,
+        institute_name: profile.institute,
+        new_lead_alert: notifs.newLead,
+        meeting_reminders: notifs.meetingReminder,
+        whatsapp_replies: notifs.whatsappReply,
+        weekly_report: notifs.weeklyReport,
+        dark_mode: toggles.darkMode,
+        compact_sidebar: toggles.compactSidebar,
+        auto_reminders_enabled: toggles.autoReminder,
+        two_factor_auth: toggles.twoFactor,
+        whatsapp_api_key: waSettings.apiKey,
+        default_message_template: waSettings.defaultMessage,
+        auto_reminder_hours: parseInt(waSettings.reminderTime),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      alert("Failed to save settings: " + err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const totalLeads = leads.length;
@@ -55,15 +121,19 @@ export default function SettingsPage() {
   const uniquePrograms = new Set(leads.map(l => l.program).filter(Boolean)).size;
   const withEmail = leads.filter(l => l.email).length;
 
+  if (loading) {
+    return <div className="skeleton" style={{ height: '100vh', borderRadius: 18 }} />;
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div />
-        <button className="btn btn-primary" onClick={save}>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
           <MdSave />
-          {saved ? 'Saved!' : 'Save Changes'}
+          {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Changes'}
         </button>
       </div>
 

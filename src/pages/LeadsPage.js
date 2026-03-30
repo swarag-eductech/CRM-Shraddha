@@ -408,7 +408,7 @@ export default function LeadsPage() {
                           <button className="btn btn-secondary btn-sm" onClick={() => setFollowupLead(lead)}>+ Follow-up</button>
                           {lead.phone && (
                             <button className="btn btn-whatsapp btn-sm" title="WhatsApp"
-                              onClick={() => { const msg = encodeURIComponent(`Hello ${lead.name}! 👋\nThank you for your interest in Shraddha Institute.\n– Team Shraddha`); window.open(`https://wa.me/91${lead.phone}?text=${msg}`, '_blank', 'noopener,noreferrer'); }}>
+                              onClick={() => { window.location.href = `/whatsapp?name=${encodeURIComponent(lead.name)}&phone=${encodeURIComponent(lead.phone)}&template=0`; }}>
                               <FaWhatsapp />
                             </button>
                           )}

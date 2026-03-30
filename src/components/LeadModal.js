@@ -170,8 +170,7 @@ export default function LeadModal({ lead, onClose, onUpdated }) {
             {lead.phone && (
               <button className="btn btn-whatsapp btn-sm"
                 onClick={() => {
-                  const msg = encodeURIComponent(`Hello ${lead.name}! Following up from Shraddha Institute 🙏`);
-                  window.open(`https://wa.me/91${lead.phone}?text=${msg}`, '_blank', 'noopener,noreferrer');
+                  window.location.href = `/whatsapp?name=${encodeURIComponent(lead.name)}&phone=${encodeURIComponent(lead.phone)}&template=0`;
                 }}>
                 <FaWhatsapp />
               </button>

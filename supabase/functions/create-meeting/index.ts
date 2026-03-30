@@ -313,26 +313,27 @@ serve(async (req: Request) => {
 
   const {
     userName,
-    userPhone,
+    userPhone = '',
     meetingDate,   // "YYYY-MM-DD"
     meetingTime,   // "HH:MM AM/PM"
     duration = 30, // minutes
     courseName = "Online Workshop",
-    hostEmail,
+    hostEmail = null,
     traineeEmails = [],
+    meetingLink: providedMeetingLink = null, // pre-provided link (skips Google Meet generation)
   } = body;
 
   // ── Validate required fields ─────────────────────────────────────────────────
-  if (!userName || !userPhone || !meetingDate || !meetingTime || !hostEmail) {
+  if (!userName || !meetingDate || !meetingTime) {
     return new Response(
       JSON.stringify({
-        error: "Missing required fields: userName, userPhone, meetingDate, meetingTime, hostEmail",
+        error: "Missing required fields: userName, meetingDate, meetingTime",
       }),
       { status: 400, headers: { ...CORS, "Content-Type": "application/json" } }
     );
   }
 
-  if (typeof hostEmail !== "string" || !hostEmail.trim()) {
+  if (hostEmail !== null && (typeof hostEmail !== "string" || !hostEmail.trim())) {
     return new Response(
       JSON.stringify({ error: "Invalid hostEmail" }),
       { status: 400, headers: { ...CORS, "Content-Type": "application/json" } }
@@ -384,46 +385,50 @@ serve(async (req: Request) => {
     );
   }
 
-  // ── Generate Google Meet link ─────────────────────────────────────────────────
-  const meetingLink = await generateMeetLink(
-    meetingDatetime,
-    Number(duration),
-    hostEmail,
-    traineeEmails
-  );
+  // ── Generate Google Meet link (only when hostEmail is available) ──────────────────────
+  let meetingLink: string | null = providedMeetingLink;
+  if (!meetingLink && hostEmail) {
+    meetingLink = await generateMeetLink(
+      meetingDatetime,
+      Number(duration),
+      hostEmail,
+      traineeEmails
+    );
+  } else if (!meetingLink) {
+    console.log("[create-meeting] No hostEmail and no pre-provided link — meeting link will be null");
+  }
 
-  // ── Upsert lead in ttp_leads ──────────────────────────────────────────────────
+  // ── Upsert lead in ttp_leads (only when userPhone is provided) ───────────────────────
   const digits = String(userPhone).replace(/\D/g, "");
   const phone10 =
     digits.startsWith("91") && digits.length === 12 ? digits.slice(2) : digits;
 
-  const { data: existingLead } = await supabase
-    .from("ttp_leads")
-    .select("id")
-    .eq("phone", phone10)
-    .limit(1)
-    .maybeSingle();
-
-  let leadId: string;
-  if (existingLead) {
-    leadId = existingLead.id;
-    console.log(`[create-meeting] Found existing lead: ${leadId}`);
-  } else {
-    const { data: newLead, error: leadErr } = await supabase
+  let primaryLeadId: string | null = null;
+  if (phone10) {
+    const { data: existingLead } = await supabase
       .from("ttp_leads")
-      .insert({ name: userName, phone: phone10, source: "meeting_booking" })
       .select("id")
-      .single();
+      .eq("phone", phone10)
+      .limit(1)
+      .maybeSingle();
 
-    if (leadErr || !newLead) {
-      console.error(`[create-meeting] Lead insert failed: ${leadErr?.message}`);
-      return new Response(
-        JSON.stringify({ error: "Failed to create lead record" }),
-        { status: 500, headers: { ...CORS, "Content-Type": "application/json" } }
-      );
+    if (existingLead) {
+      primaryLeadId = existingLead.id;
+      console.log(`[create-meeting] Found existing lead: ${primaryLeadId}`);
+    } else {
+      const { data: newLead, error: leadErr } = await supabase
+        .from("ttp_leads")
+        .insert({ name: userName, phone: phone10, source: "meeting_booking" })
+        .select("id")
+        .single();
+
+      if (leadErr || !newLead) {
+        console.error(`[create-meeting] Lead insert failed: ${leadErr?.message}`);
+      } else {
+        primaryLeadId = newLead.id;
+        console.log(`[create-meeting] Created new lead: ${primaryLeadId}`);
+      }
     }
-    leadId = newLead.id;
-    console.log(`[create-meeting] Created new lead: ${leadId}`);
   }
 
   // ── Insert meeting into ttp_meetings ──────────────────────────────────────────
@@ -451,28 +456,32 @@ serve(async (req: Request) => {
 
   console.log(`[create-meeting] Meeting created: ${meeting.id}`);
 
-  // ── Link lead to meeting via ttp_meeting_leads ────────────────────────────────
-  const { error: linkErr } = await supabase
-    .from("ttp_meeting_leads")
-    .insert({ meeting_id: meeting.id, lead_id: leadId });
+  // ── Link primary lead to meeting via ttp_meeting_leads ───────────────────────
+  if (primaryLeadId) {
+    const { error: linkErr } = await supabase
+      .from("ttp_meeting_leads")
+      .insert({ meeting_id: meeting.id, lead_id: primaryLeadId });
 
-  if (linkErr) {
-    console.error(`[create-meeting] Meeting-lead link failed: ${linkErr.message}`);
-    // Non-fatal: meeting is created, just the association failed
+    if (linkErr) {
+      console.error(`[create-meeting] Meeting-lead link failed: ${linkErr.message}`);
+      // Non-fatal: meeting is created, just the association failed
+    }
   }
 
-  // ── Send WhatsApp confirmation ────────────────────────────────────────────────
-  const platform = meetingLink?.includes("zoom") ? "Zoom" : "Google Meet";
-  const displayLink = meetingLink ?? "Link will be shared shortly";
+  // ── Send WhatsApp confirmation (only when userPhone is available) ─────────────
+  if (phone10) {
+    const platform = meetingLink?.includes("zoom") ? "Zoom" : "Google Meet";
+    const displayLink = meetingLink ?? "Link will be shared shortly";
 
-  await sendWhatsApp(userPhone, [
-    userName,                // {{1}} Name
-    courseName,              // {{2}} Course/Workshop
-    meetingDate,             // {{3}} Date  (YYYY-MM-DD)
-    meetingTime,             // {{4}} Time  (HH:MM AM/PM)
-    platform,                // {{5}} Platform
-    displayLink,             // {{6}} Meet link
-  ]);
+    await sendWhatsApp(userPhone, [
+      userName,                // {{1}} Name
+      courseName,              // {{2}} Course/Workshop
+      meetingDate,             // {{3}} Date  (YYYY-MM-DD)
+      meetingTime,             // {{4}} Time  (HH:MM AM/PM)
+      platform,                // {{5}} Platform
+      displayLink,             // {{6}} Meet link
+    ]);
+  }
 
   // ── Success response ──────────────────────────────────────────────────────────
   return new Response(

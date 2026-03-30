@@ -15,16 +15,16 @@ export default function MessagesPage() {
 
   const activeLead = leads[activeIdx];
 
-  const fetchMessages = useCallback(async (leadId) => {
+  const fetchMessages = useCallback(async (leadId, showLoader = true) => {
     if (!leadId) return;
-    setLoadingMessages(true);
+    if (showLoader) setLoadingMessages(true);
     const { data, error } = await supabase
       .from('ttp_messages')
       .select('*')
       .eq('lead_id', leadId)
       .order('created_at', { ascending: true });
     
-    setLoadingMessages(false);
+    if (showLoader) setLoadingMessages(false);
     if (!error) setMessages(data || []);
   }, []);
 
@@ -32,13 +32,17 @@ export default function MessagesPage() {
     if (activeLead) {
       fetchMessages(activeLead.id);
       
-      // Realtime subscription for the current lead's messages
+      // Auto refresh chat every 3 seconds, but do not show loader on background refresh
+      const interval = setInterval(() => {
+        fetchMessages(activeLead.id, false);
+      }, 3000);
+
+      // We can also keep realtime as an extra layer
       const channel = supabase
         .channel(`messages_${activeLead.id}`)
         .on('postgres_changes', 
           { event: 'INSERT', schema: 'public', table: 'ttp_messages', filter: `lead_id=eq.${activeLead.id}` }, 
           (payload) => {
-            // Only add if not already in list (avoid duplicate local + subscription)
             setMessages(prev => {
               if (prev.find(m => m.id === payload.new.id)) return prev;
               return [...prev, payload.new];
@@ -48,6 +52,7 @@ export default function MessagesPage() {
         .subscribe();
 
       return () => {
+        clearInterval(interval);
         supabase.removeChannel(channel);
       };
     }
@@ -66,40 +71,41 @@ export default function MessagesPage() {
     setIsSending(true);
 
     try {
-      // 1. Log the message in Database (Outbound)
+      // 1. Always save to DB directly (reliable, immediate)
       const { data: newMsg, error: dbError } = await supabase
         .from('ttp_messages')
-        .insert([
-          { 
-            lead_id: activeLead.id, 
-            text: textToSend,
-            message_text: textToSend, 
-            direction: 'outgoing' 
-          }
-        ])
+        .insert([{
+          lead_id: activeLead.id,
+          text: textToSend,
+          message_text: textToSend,
+          direction: 'outgoing'
+        }])
         .select()
         .single();
 
       if (dbError) throw dbError;
-      
-      // Update local UI immediately for responsiveness
-      setMessages(prev => [...prev, newMsg]);
 
-      // 2. Trigger Interakt via Edge Function
-      // Note: This requires an Edge Function 'send-whatsapp' to be deployed
-      const { error: fnError } = await supabase.functions.invoke('send-whatsapp', {
-        body: { 
-          phone: activeLead.phone, 
-          message: textToSend 
+      // 2. Optimistic UI update
+      setMessages(prev => prev.find(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
+
+      // 3. Trigger WhatsApp delivery via Edge Function (best-effort)
+      const { error: fnError } = await supabase.functions.invoke('whatsapp-webhook', {
+        body: {
+          manual: true,
+          leadId: activeLead.id,
+          message: textToSend
+        },
+        headers: {
+          'x-interakt-secret': 'mysecret123'
         }
       });
 
       if (fnError) {
-        console.warn('WhatsApp delivery via Interakt failed, used WA fallback button instead');
+        console.warn('WhatsApp delivery via Interakt failed:', fnError.message);
       }
 
     } catch (err) {
-      alert('Error: ' + err.message);
+      alert('Error sending message: ' + err.message);
     } finally {
       setIsSending(false);
     }

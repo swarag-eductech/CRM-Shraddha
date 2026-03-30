@@ -17,9 +17,9 @@ export default function MeetingsPage() {
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ 
-    leadIds: [], 
     hostLeadId: '', 
     traineeLeadIds: [],
+    leadIds: [],        // used only in edit mode (populated from existing meeting)
     meetingDatetime: '', 
     meetingLink: '' 
   });
@@ -66,10 +66,13 @@ export default function MeetingsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (form.leadIds.length === 0 || !form.meetingDatetime) return;
+    if (!form.hostLeadId || !form.meetingDatetime) return;
     setSaving(true);
     setError('');
     try {
+      // Build full participant list: host + trainees (deduplicated)
+      const computedLeadIds = [...new Set([form.hostLeadId, ...form.traineeLeadIds].filter(Boolean))];
+
       const hostLead = leads.find(l => l.id === form.hostLeadId);
       const firstTrainee = leads.find(l => l.id === form.traineeLeadIds[0]);
       
@@ -79,16 +82,15 @@ export default function MeetingsPage() {
         .filter(Boolean);
 
       await scheduleMeeting({
-        leadIds: form.leadIds.length > 0 ? form.leadIds : [form.hostLeadId, ...form.traineeLeadIds].filter(Boolean),
+        leadIds: computedLeadIds,
         meetingDatetime: form.meetingDatetime,
         meetingLink: form.meetingLink,
-        hostEmail: hostLead?.email,
+        hostEmail: hostLead?.email || null,
         traineeEmails,
-        // The WhatsApp confirmation will be sent to the first trainee (or host if none)
         userName: (firstTrainee || hostLead)?.name || 'Lead',
         userPhone: (firstTrainee || hostLead)?.phone || '',
       });
-      setForm({ leadIds: [], hostLeadId: '', traineeLeadIds: [], meetingDatetime: '', meetingLink: '' });
+      setForm({ hostLeadId: '', traineeLeadIds: [], leadIds: [], meetingDatetime: '', meetingLink: '' });
       setShowForm(false);
       fetchAll();
     } catch (err) {
@@ -122,14 +124,14 @@ export default function MeetingsPage() {
 
   const openEdit = (m) => {
     setEditingMeeting(m);
-    // Convert UTC from DB to local datetime-local format (YYYY-MM-DDTHH:mm)
     const dt = new Date(m.meeting_datetime);
-    // Add 5.5 hours to turn UTC into IST for the input field
     const istOffset = 5.5 * 60 * 60 * 1000;
     const istTime = new Date(dt.getTime() + istOffset);
     const localStr = istTime.toISOString().slice(0, 16);
     
     setForm({
+      hostLeadId: '',
+      traineeLeadIds: [],
       leadIds: m.ttp_meeting_leads?.map(ml => ml.ttp_leads?.id).filter(Boolean) || [],
       meetingDatetime: localStr,
       meetingLink: m.meeting_link || ''
@@ -207,90 +209,117 @@ export default function MeetingsPage() {
               )}
               <h3>{editingMeeting ? 'Reschedule Meeting' : 'Schedule New Meeting'}</h3>
               <div className="form-grid">
-                <div className="form-group">
-                  <label>Organizing Host *</label>
-                  <select
-                    className="form-input"
-                    value={form.hostLeadId}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      setForm(f => ({ 
-                        ...f, 
-                        hostLeadId: id,
-                        // If no trainees yet, maybe auto-add the rest of leadIds?
-                        // But let's follow user suggestion: trainee = leadIds excluding host
-                        traineeLeadIds: f.leadIds.filter(lid => lid !== id)
-                      }));
-                    }}
-                    required
-                  >
-                    <option value="">-- Select Host --</option>
-                    {leads.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name} {l.email ? `<${l.email}>` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Trainees/Attendees (Hold Ctrl to select multiple)</label>
-                  <select
-                    multiple
-                    className="form-input"
-                    value={form.traineeLeadIds}
-                    onChange={(e) => {
-                      const vals = Array.from(e.target.selectedOptions, option => option.value);
-                      setForm((f) => {
-                        const newLeadIds = [f.hostLeadId, ...vals].filter(Boolean);
-                        const uniqueLeadIds = [...new Set(newLeadIds)];
-                        return { ...f, traineeLeadIds: vals, leadIds: uniqueLeadIds };
-                      });
-                    }}
-                    style={{ height: '80px' }}
-                  >
-                    {leads.filter(l => l.id !== form.hostLeadId).map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label>Original Lead Selection (Linked to meeting)</label>
-                  <select
-                    multiple
-                    className="form-input"
-                    value={form.leadIds}
-                    onChange={(e) => {
-                      const vals = Array.from(e.target.selectedOptions, option => option.value);
-                      setForm((f) => ({ ...f, leadIds: vals }));
-                    }}
-                    style={{ height: '100px' }}
-                  >
-                    {leads.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}{l.phone ? ` — ${l.phone}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {editingMeeting ? (
+                  /* ── EDIT MODE: single participants multi-select ── */
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label>Participants <small style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Hold Ctrl to select multiple)</small></label>
+                    <select
+                      multiple
+                      className="form-input"
+                      value={form.leadIds}
+                      onChange={(e) => {
+                        const vals = Array.from(e.target.selectedOptions, o => o.value);
+                        setForm(f => ({ ...f, leadIds: vals }));
+                      }}
+                      style={{ height: '110px' }}
+                    >
+                      {leads.map(l => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}{l.phone ? ` — ${l.phone}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  /* ── NEW MEETING MODE: Host + Trainees ── */
+                  <>
+                    <div className="form-group">
+                      <label>Organizing Host *</label>
+                      <select
+                        className="form-input"
+                        value={form.hostLeadId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setForm(f => ({
+                            ...f,
+                            hostLeadId: id,
+                            traineeLeadIds: f.traineeLeadIds.filter(lid => lid !== id),
+                          }));
+                        }}
+                        required
+                      >
+                        <option value="">-- Select Host --</option>
+                        {leads.map(l => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}{l.phone ? ` (${l.phone})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Trainees / Attendees <small style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Hold Ctrl to select multiple)</small></label>
+                      <select
+                        multiple
+                        className="form-input"
+                        value={form.traineeLeadIds}
+                        onChange={(e) => {
+                          const vals = Array.from(e.target.selectedOptions, o => o.value);
+                          setForm(f => ({ ...f, traineeLeadIds: vals }));
+                        }}
+                        style={{ height: '110px' }}
+                      >
+                        {leads.filter(l => l.id !== form.hostLeadId).map(l => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}{l.phone ? ` — ${l.phone}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* Preview: show which leads will be linked */}
+                    {(form.hostLeadId || form.traineeLeadIds.length > 0) && (
+                      <div style={{
+                        gridColumn: 'span 2',
+                        padding: '8px 12px',
+                        background: 'rgba(234,88,12,0.06)',
+                        borderRadius: 8,
+                        fontSize: 12,
+                        color: 'var(--text-muted)',
+                        lineHeight: 1.8,
+                      }}>
+                        <span style={{ fontWeight: 600, color: 'var(--primary)' }}>Will be linked: </span>
+                        {[form.hostLeadId, ...form.traineeLeadIds].filter(Boolean).map(id => {
+                          const l = leads.find(x => x.id === id);
+                          return l ? (
+                            <span key={id} style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              background: '#fff', border: '1px solid rgba(234,88,12,0.3)',
+                              borderRadius: 12, padding: '1px 8px', marginRight: 6, color: '#ea580c',
+                            }}>
+                              {id === form.hostLeadId ? '👤 ' : '🎓 '}{l.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
                 <div className="form-group">
                   <label>Date &amp; Time *</label>
                   <input
                     type="datetime-local"
                     className="form-input"
                     value={form.meetingDatetime}
-                    onChange={(e) => setForm((f) => ({ ...f, meetingDatetime: e.target.value }))}
+                    onChange={(e) => setForm(f => ({ ...f, meetingDatetime: e.target.value }))}
                     required
                   />
                 </div>
                 <div className="form-group">
-                  <label>Meet / Zoom Link</label>
+                  <label>Meet / Zoom Link <small style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(auto-generated if blank)</small></label>
                   <input
                     className="form-input"
                     placeholder="https://meet.google.com/..."
                     value={form.meetingLink}
-                    onChange={(e) => setForm((f) => ({ ...f, meetingLink: e.target.value }))}
+                    onChange={(e) => setForm(f => ({ ...f, meetingLink: e.target.value }))}
                   />
                 </div>
               </div>
@@ -298,7 +327,7 @@ export default function MeetingsPage() {
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   <MdEvent /> {saving ? 'Saving…' : (editingMeeting ? 'Update Meeting' : 'Schedule Meeting')}
                 </button>
-                <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setEditingMeeting(null); setForm({ leadIds: [], meetingDatetime: '', meetingLink: '' }); }}>
+                <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setEditingMeeting(null); setForm({ hostLeadId: '', traineeLeadIds: [], leadIds: [], meetingDatetime: '', meetingLink: '' }); }}>
                   Cancel
                 </button>
               </div>
@@ -363,7 +392,12 @@ export default function MeetingsPage() {
                     <MdEvent />
                   </div>
                   <div className="meeting-info">
-                    <h4>{meetingLeads.length} Lead(s)</h4>
+                    <h4>
+                      {meetingLeads.length === 0
+                        ? 'No Leads'
+                        : meetingLeads.slice(0, 3).map(ml => ml.ttp_leads?.name).filter(Boolean).join(', ')}
+                      {meetingLeads.length > 3 ? ` +${meetingLeads.length - 3} more` : ''}
+                    </h4>
                     
                     <span style={{ 
                       display: 'inline-block', padding: '2px 8px', borderRadius: '12px',
