@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { MdRefresh, MdPeople, MdAccessTime, MdHistory } from 'react-icons/md';
 import { supabase } from '../supabaseClient';
 import { updateLeadStatus } from '../api';
 import LeadModal from '../components/LeadModal';
 
-/* react-beautiful-dnd v13 crashes in React 18+ Strict Mode without this wrapper */
+/* @hello-pangea/dnd works better with React 18/19 than react-beautiful-dnd */
+/* but this hack is still helpful to ensure the Droppable mounts correctly */
 function StrictModeDroppable({ children, ...props }) {
   const [enabled, setEnabled] = React.useState(false);
   React.useEffect(() => {
@@ -64,9 +65,11 @@ function LeadCard({ lead, col, onClick, dragProvided, isDragging }) {
         border: `1.5px solid ${isDragging ? col.color : isOverdue ? '#fca5a5' : 'rgba(0,0,0,0.07)'}`,
         borderRadius: 12, padding: '12px 14px', marginBottom: 10,
         cursor: 'pointer', userSelect: 'none',
-        boxShadow: isDragging ? `0 12px 32px ${col.color}40` : isOverdue ? '0 2px 8px rgba(239,68,68,0.12)' : '0 1px 4px rgba(0,0,0,0.06)',
-        opacity: isDragging ? 0.95 : 1,
-        transition: 'box-shadow 0.15s, border-color 0.15s',
+        boxShadow: isDragging ? `0 20px 48px ${col.color}45` : isOverdue ? '0 2px 8px rgba(239,68,68,0.12)' : '0 1px 4px rgba(0,0,0,0.06)',
+        transform: isDragging ? `${dragProvided.draggableProps.style.transform} scale(1.02)` : dragProvided.draggableProps.style.transform,
+        opacity: isDragging ? 0.9 : 1,
+        transition: 'box-shadow 0.2s, border-color 0.2s, background 0.2s, transform 0.2s',
+        zIndex: isDragging ? 1000 : 1,
       }}
     >
       {/* Name row */}
@@ -142,6 +145,7 @@ export default function LeadsKanbanPage() {
     const { data } = await supabase
       .from('ttp_leads')
       .select('id, name, phone, city, status, created_at, ttp_followups(id, next_followup_at, status)')
+      .eq('is_deleted', false)
       .order('created_at', { ascending: false });
     setLoading(false);
     setLeads(data || []);
@@ -151,21 +155,36 @@ export default function LeadsKanbanPage() {
     fetchLeads();
     const ch = supabase
       .channel('kanban_rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_leads' }, fetchLeads)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_leads' }, (payload) => {
+        // Optimistic check: if it's an update and we already have it updated locally, ignore
+        fetchLeads();
+      })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [fetchLeads]);
 
   const onDragEnd = async (result) => {
     const { draggableId, destination, source } = result;
-    if (!destination || destination.droppableId === source.droppableId) return;
+    
+    // Dropped outside a list or back in the same spot
+    if (!destination) return;
+    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
+    
     const targetStatus = destination.droppableId;
     const leadId = draggableId;
-    const prevLeads = leads;
-    setLeads((ls) => ls.map((l) => l.id === leadId ? { ...l, status: targetStatus } : l));
+    
+    // Optimistically update status
+    const prevLeads = [...leads];
+    setLeads((currentLeads) => {
+      return currentLeads.map((l) => 
+        l.id === leadId ? { ...l, status: targetStatus } : l
+      );
+    });
+
     try {
       await updateLeadStatus(leadId, targetStatus);
-    } catch {
+    } catch (error) {
+      console.error("Failed to update status:", error);
       setLeads(prevLeads);
     }
   };
@@ -174,27 +193,36 @@ export default function LeadsKanbanPage() {
   const total = leads.length;
 
   return (
-    <div>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+    <div style={{ animation: 'fadeIn 0.4s ease' }}>
+      {/* Header Summary */}
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        marginBottom: 24,
+        background: '#fff',
+        padding: '16px 20px',
+        borderRadius: 16,
+        boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
+      }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           {COLUMNS.map((col) => {
             const cnt = leadsForCol(col.id).length;
             return (
-              <div key={col.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div key={col.id} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: col.color }} />
-                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{col.label}</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: col.color }}>{cnt}</span>
+                <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>{col.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: col.color, background: `${col.color}15`, padding: '1px 8px', borderRadius: 10 }}>{cnt}</span>
               </div>
             );
           })}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            <MdPeople style={{ verticalAlign: 'middle' }} /> {total} total
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>
+            <MdPeople style={{ verticalAlign: 'middle', marginRight: 4, fontSize: 18 }} /> {total} total leads
           </span>
           <button className="btn btn-secondary btn-sm" onClick={fetchLeads} disabled={loading}>
-            <MdRefresh /> Refresh
+            <MdRefresh style={{ animation: loading ? 'App-logo-spin 1s linear infinite' : 'none' }} /> Refresh
           </button>
         </div>
       </div>
@@ -203,8 +231,11 @@ export default function LeadsKanbanPage() {
       <DragDropContext onDragEnd={onDragEnd}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(200px, 1fr))`,
-          gap: 14, overflowX: 'auto', paddingBottom: 8,
+          gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(240px, 1fr))`,
+          gap: 20, 
+          overflowX: 'auto', 
+          paddingBottom: 20,
+          minHeight: 'calc(100vh - 250px)',
         }}>
           {COLUMNS.map((col) => {
             const colLeads = leadsForCol(col.id);
@@ -212,64 +243,92 @@ export default function LeadsKanbanPage() {
               <div
                 key={col.id}
                 style={{
-                  background: '#f9f4ef', borderRadius: 16,
-                  border: '2px dashed transparent', padding: '14px 12px', minHeight: 200,
+                  background: '#f8f9fa', 
+                  borderRadius: 20,
+                  border: '1px solid rgba(0,0,0,0.03)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  maxHeight: '100%',
                 }}
               >
                 {/* Column header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: col.color }} />
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#1a1a1a' }}>{col.label}</span>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between', 
+                  padding: '16px 16px 12px',
+                  borderBottom: `2px solid ${col.color}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 12, height: 12, borderRadius: '50%', background: col.color, boxShadow: `0 0 0 3px ${col.color}20` }} />
+                    <span style={{ fontSize: 14, fontWeight: 800, color: '#1a1a1a' }}>{col.label}</span>
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 20, background: col.color, color: '#fff' }}>
+                  <span style={{ 
+                    fontSize: 11, 
+                    fontWeight: 800, 
+                    padding: '3px 10px', 
+                    borderRadius: 20, 
+                    background: col.color, 
+                    color: '#fff',
+                    boxShadow: `0 4px 10px ${col.color}40`,
+                  }}>
                     {colLeads.length}
                   </span>
                 </div>
 
-                {/* Cards */}
-                {loading ? (
-                  [1, 2].map((i) => (
-                    <div key={i} className="skeleton" style={{ height: 90, borderRadius: 12, marginBottom: 10 }} />
-                  ))
-                ) : (
-                  <StrictModeDroppable droppableId={col.id}>
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        style={{
-                          minHeight: 60,
-                          background: snapshot.isDraggingOver ? col.bg : 'transparent',
-                          borderRadius: 10,
-                          border: snapshot.isDraggingOver ? `1.5px dashed ${col.color}` : '1.5px dashed transparent',
-                          transition: 'background 0.15s, border-color 0.15s',
-                          padding: 2,
-                        }}
-                      >
-                        {colLeads.length === 0 && !snapshot.isDraggingOver && (
-                          <div style={{ textAlign: 'center', padding: '16px 10px', color: 'var(--text-muted)', fontSize: 12 }}>
-                            No leads
-                          </div>
-                        )}
-                        {colLeads.map((lead, index) => (
-                          <Draggable key={lead.id} draggableId={lead.id} index={index}>
-                            {(dragProvided, dragSnapshot) => (
-                              <LeadCard
-                                lead={lead}
-                                col={col}
-                                dragProvided={dragProvided}
-                                isDragging={dragSnapshot.isDragging}
-                                onClick={() => setSelectedLead(lead)}
-                              />
-                            )}
-                          </Draggable>
-                        ))}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </StrictModeDroppable>
-                )}
+                {/* Cards Container */}
+                <div style={{ padding: '12px', flex: 1, overflowY: 'auto' }}>
+                  {loading ? (
+                    [1, 2, 3].map((i) => (
+                      <div key={i} className="skeleton" style={{ height: 100, borderRadius: 14, marginBottom: 12, opacity: 0.1 * (4-i) }} />
+                    ))
+                  ) : (
+                    <StrictModeDroppable droppableId={col.id}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                          style={{
+                            minHeight: '150px',
+                            background: snapshot.isDraggingOver ? `${col.color}08` : 'transparent',
+                            borderRadius: 14,
+                            transition: 'all 0.2s ease',
+                            padding: '2px',
+                          }}
+                        >
+                          {colLeads.length === 0 && !snapshot.isDraggingOver && (
+                            <div style={{ 
+                              textAlign: 'center', 
+                              padding: '40px 20px', 
+                              color: '#94a3b8', 
+                              fontSize: 13,
+                              border: '2px dashed rgba(0,0,0,0.05)',
+                              borderRadius: 16,
+                              marginTop: 10
+                            }}>
+                              <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.5 }}>📂</div>
+                              No leads in this stage
+                            </div>
+                          )}
+                          {colLeads.map((lead, index) => (
+                            <Draggable key={lead.id} draggableId={lead.id} index={index}>
+                              {(dragProvided, dragSnapshot) => (
+                                <LeadCard
+                                  lead={lead}
+                                  col={col}
+                                  dragProvided={dragProvided}
+                                  isDragging={dragSnapshot.isDragging}
+                                  onClick={() => setSelectedLead(lead)}
+                                />
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </StrictModeDroppable>
+                  )}
+                </div>
               </div>
             );
           })}

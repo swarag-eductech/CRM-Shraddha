@@ -29,23 +29,30 @@ export default function MeetingsPage() {
   const [addLeadsModal, setAddLeadsModal] = useState({ open: false, meetingId: null, selectedLeadIds: [] });
   // Modal for viewing leads
   const [viewLeadsModal, setViewLeadsModal] = useState({ open: false, leads: [] });
-  // Real-time tick
+  // Real-time tick (60s — matches cron cadence)
   const [tick, setTick] = useState(Date.now());
   const [editingMeeting, setEditingMeeting] = useState(null); // The meeting object being edited
+  // Reminder stats (live count from ttp_meeting_notifications)
+  const [reminderSentCount, setReminderSentCount] = useState(0);
 
   const fetchAll = async () => {
     setLoading(true);
-    const [leadRes, meetRes] = await Promise.all([
+    const [leadRes, meetRes, notifRes] = await Promise.all([
       supabase.from('ttp_leads').select('id, name, phone, email').order('name'),
       supabase
         .from('ttp_meetings')
         .select('*, ttp_meeting_leads(ttp_leads(id, name, phone))')
         .eq('is_deleted', false)
         .order('meeting_datetime', { ascending: true }),
+      supabase
+        .from('ttp_meeting_notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'sent'),
     ]);
     setLoading(false);
     if (!leadRes.error) setLeads(leadRes.data || []);
     if (!meetRes.error) setMeetings(meetRes.data || []);
+    setReminderSentCount(notifRes.count || 0);
   };
 
   useEffect(() => {
@@ -54,11 +61,19 @@ export default function MeetingsPage() {
       .channel('meetings_page_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_meetings' }, () => fetchAll())
       .subscribe();
-      
-    const interval = setInterval(() => setTick(Date.now()), 30000); // 30s refresh
-    
+
+    // Also subscribe to ttp_meeting_notifications so stats update the moment cron sends a reminder
+    const chNotif = supabase
+      .channel('meeting_notifs_rt')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ttp_meeting_notifications' }, () => fetchAll())
+      .subscribe();
+
+    // Tick every 60s — recalculates countdown timers and meeting status live
+    const interval = setInterval(() => setTick(Date.now()), 60000);
+
     return () => {
       supabase.removeChannel(ch);
+      supabase.removeChannel(chNotif);
       clearInterval(interval);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -161,7 +176,7 @@ export default function MeetingsPage() {
     }
   };
 
-  const getMeetingStatus = (dt) => {
+  const getMeetingStatus = (dt, _tick) => {
     const meetingTime = new Date(dt);
     const now = new Date();
     // Use true minutes difference (meetingTime and now are properly evaluated with local vs UTC logic correctly since format is IS0/UTC)
@@ -172,11 +187,12 @@ export default function MeetingsPage() {
     return "Completed";
   };
 
+  // tick is referenced here so React re-evaluates status every 60s
   const upcomingMs = meetings.filter((m) => {
-    const s = getMeetingStatus(m.meeting_datetime);
+    const s = getMeetingStatus(m.meeting_datetime, tick);
     return s === "Upcoming" || s === "In Progress";
   });
-  const pastMs = meetings.filter((m) => getMeetingStatus(m.meeting_datetime) === "Completed");
+  const pastMs = meetings.filter((m) => getMeetingStatus(m.meeting_datetime, tick) === "Completed");
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }} className="meetings-layout">
@@ -372,7 +388,7 @@ export default function MeetingsPage() {
           ) : (
             upcomingMs.map((m) => {
               const meetingLeads = m.ttp_meeting_leads || [];
-              const status = getMeetingStatus(m.meeting_datetime);
+              const status = getMeetingStatus(m.meeting_datetime, tick);
               const now = new Date();
               const diffMin = Math.round((new Date(m.meeting_datetime) - now) / 60000);
               const soon = diffMin <= 30 && diffMin > 0;
@@ -413,6 +429,27 @@ export default function MeetingsPage() {
                         Starting in {diffMin} min
                       </p>
                     )}
+                    {/* Reminder badge strip — updates in real-time as cron fires */}
+                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginTop: 5 }}>
+                      {[
+                        { key: 'reminder_3day_sent',  label: '3D' },
+                        { key: 'reminder_2day_sent',  label: '2D' },
+                        { key: 'reminder_1day_sent',  label: '1D' },
+                        { key: 'reminder_1hour_sent', label: '1hr' },
+                        { key: 'reminder_30_sent',    label: '30m' },
+                        { key: 'reminder_15_sent',    label: '15m' },
+                        { key: 'reminder_5_sent',     label: '5m'  },
+                      ].map(r => (
+                        <span key={r.key} title={r.key.replace('reminder_','').replace('_sent','') + ' reminder'} style={{
+                          fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+                          background: m[r.key] ? '#dcfce7' : '#f3f4f6',
+                          color: m[r.key] ? '#16a34a' : '#9ca3af',
+                          border: `1px solid ${m[r.key] ? '#bbf7d0' : '#e5e7eb'}`,
+                        }}>
+                          {r.label} {m[r.key] ? '✓' : '○'}
+                        </span>
+                      ))}
+                    </div>
                     {m.meeting_link && (
                       <a
                         href={m.meeting_link}
@@ -463,12 +500,26 @@ export default function MeetingsPage() {
 
         {/* Stats */}
         <div className="content-card">
-          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Meeting Stats</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Meeting Stats</h2>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              fontSize: 10, fontWeight: 700, color: '#16a34a',
+              background: 'rgba(22,163,74,0.1)', borderRadius: 20, padding: '2px 8px',
+            }}>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%', background: '#16a34a',
+                animation: 'pulse 2s infinite',
+              }} />
+              LIVE
+            </span>
+          </div>
+          <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
           {[
             { label: 'Total Scheduled', value: meetings.length, color: 'var(--primary)' },
             { label: 'Upcoming', value: upcomingMs.length, color: '#2563eb' },
             { label: 'Completed', value: pastMs.length, color: '#16a34a' },
-            { label: '30m Reminders Sent', value: meetings.filter((m) => m.reminder_30_sent).length, color: '#ca8a04' },
+            { label: 'Reminders Sent', value: reminderSentCount, color: '#ca8a04' },
           ].map((s) => (
             <div
               key={s.label}

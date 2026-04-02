@@ -89,6 +89,26 @@ export async function addFollowup({ leadId, note, nextFollowupAt, extend = false
     .select()
     .single();
   if (error) throw error;
+
+  // Insert dashboard bell notification (non-fatal)
+  try {
+    const { data: lead } = await supabase
+      .from('ttp_leads')
+      .select('name, assigned_user_id')
+      .eq('id', leadId)
+      .single();
+    const displayDate = new Date(utcDate).toLocaleString('en-IN', {
+      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+    });
+    await supabase.from('ttp_notifications').insert({
+      user_id: lead?.assigned_user_id || null,
+      title: 'Follow-up Scheduled',
+      message: `Follow-up #${followupNumber} for ${lead?.name || 'Lead'} scheduled for ${displayDate}`,
+      type: 'followup_scheduled',
+      is_read: false,
+    });
+  } catch (_) { /* non-fatal */ }
+
   return data;
 }
 

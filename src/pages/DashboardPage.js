@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MdPeople, MdTrendingUp, MdEvent, MdCheckCircle, MdArrowForward, MdRefresh, MdToday, MdApps } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { useLeads } from '../hooks/useLeads';
@@ -82,7 +83,8 @@ const _statCards = [
 
 
 
-export default function DashboardPage({ setActivePage }) {
+export default function DashboardPage() {
+  const navigate = useNavigate();
   const { leads, loading, refetch } = useLeads();
   const { followups: todayFollowups, meetings: todayMeetings } = useTodayTasks();
   const today = new Date();
@@ -234,7 +236,7 @@ export default function DashboardPage({ setActivePage }) {
                 <h2>Recent Leads</h2>
                 <p>Latest {recentLeads.length} from Supabase</p>
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setActivePage('leads')}>
+              <button className="btn btn-secondary btn-sm" onClick={() => navigate('/leads')}>
                 View All <MdArrowForward />
               </button>
             </div>
@@ -312,16 +314,16 @@ export default function DashboardPage({ setActivePage }) {
           <div className="content-card">
             <div className="section-header">
               <div><h2>Today's Tasks</h2><p>Follow-ups &amp; meetings due today</p></div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setActivePage('todaytasks')}>
+              <button className="btn btn-secondary btn-sm" onClick={() => navigate('/todaytasks')}>
                 View All <MdArrowForward />
               </button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 4 }}>
-              <div style={{ background: 'rgba(234,88,12,0.07)', borderRadius: 12, padding: '14px 16px', border: '1.5px solid rgba(234,88,12,0.15)', cursor: 'pointer' }} onClick={() => setActivePage('todaytasks')}>
+              <div style={{ background: 'rgba(234,88,12,0.07)', borderRadius: 12, padding: '14px 16px', border: '1.5px solid rgba(234,88,12,0.15)', cursor: 'pointer' }} onClick={() => navigate('/todaytasks')}>
                 <div style={{ fontSize: 28, fontWeight: 800, color: '#ea580c' }}>{todayFollowups.length}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Follow-ups due</div>
               </div>
-              <div style={{ background: 'rgba(37,99,235,0.07)', borderRadius: 12, padding: '14px 16px', border: '1.5px solid rgba(37,99,235,0.15)', cursor: 'pointer' }} onClick={() => setActivePage('todaytasks')}>
+              <div style={{ background: 'rgba(37,99,235,0.07)', borderRadius: 12, padding: '14px 16px', border: '1.5px solid rgba(37,99,235,0.15)', cursor: 'pointer' }} onClick={() => navigate('/todaytasks')}>
                 <div style={{ fontSize: 28, fontWeight: 800, color: '#2563eb' }}>{todayMeetings.length}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Meetings today</div>
               </div>
@@ -333,23 +335,23 @@ export default function DashboardPage({ setActivePage }) {
             <div className="section-header"><h2>Quick Actions</h2></div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => setActivePage('leads')}>
+                onClick={() => navigate('/leads')}>
                 <MdPeople /> View All Leads
               </button>
               <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => setActivePage('kanban')}>
+                onClick={() => navigate('/kanban')}>
                 <MdApps /> Kanban Board
               </button>
               <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => setActivePage('meetings')}>
+                onClick={() => navigate('/meetings')}>
                 <MdEvent /> Schedule Meeting
               </button>
               <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => setActivePage('todaytasks')}>
+                onClick={() => navigate('/todaytasks')}>
                 <MdToday /> Today's Tasks
               </button>
               <button className="btn btn-whatsapp" style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => setActivePage('whatsapp')}>
+                onClick={() => navigate('/whatsapp')}>
                 <FaWhatsapp /> Bulk WhatsApp
               </button>
             </div>

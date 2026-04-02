@@ -135,21 +135,157 @@ serve(async (_req) => {
   }
 
   // ── SECTION 2: MEETING REMINDERS ────────────────────────────────────────────
-  const in35Min = new Date(nowUTC.getTime() + 35 * 60 * 1000).toISOString();
+
+  // IST helpers for day-based calculations
+  const ISTOffsetMs = 5.5 * 60 * 60 * 1000;
+  const nowIST = new Date(nowUTC.getTime() + ISTOffsetMs);
+  const getISTDateAhead = (n: number): string => {
+    const d = new Date(nowIST.getTime() + n * 24 * 60 * 60 * 1000);
+    return d.toISOString().split("T")[0]; // YYYY-MM-DD in IST
+  };
+
+  // Shared helper: dispatch WhatsApp + in-app notification to all leads of a meeting
+  const dispatchMeetingReminder = async (
+    label: string,
+    meetingId: string,
+    meetingLeads: any[],
+    linkValue: string,
+    timeStr: string
+  ) => {
+    for (const ml of meetingLeads) {
+      const lead = ml.ttp_leads;
+      if (!lead) continue;
+
+      const { data: existingNotif } = await supabase
+        .from("ttp_meeting_notifications")
+        .select("id")
+        .eq("meeting_id", meetingId)
+        .eq("lead_id", lead.id)
+        .eq("type", label)
+        .eq("status", "sent")
+        .limit(1);
+
+      if (existingNotif && existingNotif.length > 0) {
+        console.log(`[Meeting-${label}] Already sent to ${lead.name}, skipping.`);
+        continue;
+      }
+
+      let status = "failed";
+      if (lead.phone) {
+        console.log(`[WhatsApp] Sending '${label}' reminder to: ${lead.phone}`);
+        const parts = timeStr.split(",");
+        const meetingDate = parts[1]?.trim() || "";
+        const meetingTimeStr = parts[2]?.trim() || "";
+        const platform = linkValue?.includes("zoom") ? "Zoom" : "Google Meet";
+
+        const ok = await sendWhatsApp(lead.phone, null, {
+          name: "wron_successful",
+          values: [
+            lead.name ?? "Customer", // {{1}} Name
+            "Online Workshop",       // {{2}} Course
+            meetingDate,             // {{3}} Date
+            meetingTimeStr,          // {{4}} Time
+            platform,                // {{5}} Platform
+            linkValue,               // {{6}} Meeting Link
+          ],
+        });
+        status = ok ? "sent" : "failed";
+        if (!ok) console.error(`[WhatsApp] FAILED to ${lead.phone} for ${label} reminder`);
+      } else {
+        console.warn(`[Meeting] Skipping lead ${lead.id} — no phone number`);
+      }
+
+      const { error: notifInsertErr } = await supabase.from("ttp_meeting_notifications").insert({
+        meeting_id: meetingId,
+        lead_id: lead.id,
+        type: label,
+        status,
+      });
+      if (notifInsertErr) console.error(`[MeetingNotif] Insert failed: ${notifInsertErr.message}`);
+
+      const friendlyLabel =
+        label === "3day"  ? "3 Days"   :
+        label === "2day"  ? "2 Days"   :
+        label === "1day"  ? "1 Day"    :
+        label === "1hour" ? "1 Hour"   :
+        label.replace("min", " Minutes");
+
+      await insertNotification(
+        supabase,
+        lead.assigned_user_id,
+        `Meeting Reminder – ${friendlyLabel} to go`,
+        `You have a meeting with ${lead.name} in ${friendlyLabel}`,
+        "meeting_reminder"
+      );
+    }
+  };
+
+  // ── 2A: Day-based reminders: 3 days / 2 days / 1 day before ─────────────────
+  const dayReminderConfig = [
+    { daysAhead: 3, flag: "reminder_3day_sent",  label: "3day" },
+    { daysAhead: 2, flag: "reminder_2day_sent",  label: "2day" },
+    { daysAhead: 1, flag: "reminder_1day_sent",  label: "1day" },
+  ];
+
+  for (const { daysAhead, flag, label } of dayReminderConfig) {
+    const targetDate = getISTDateAhead(daysAhead);
+    const rangeStart = `${targetDate}T00:00:00+05:30`;
+    const rangeEnd   = `${targetDate}T23:59:59+05:30`;
+
+    const { data: dayMeetings, error: dayErr } = await supabase
+      .from("ttp_meetings")
+      .select("id, meeting_datetime, meeting_link, ttp_meeting_leads(ttp_leads(id, name, phone, assigned_user_id))")
+      .eq("is_deleted", false)
+      .eq(flag, false)
+      .gte("meeting_datetime", rangeStart)
+      .lte("meeting_datetime", rangeEnd);
+
+    if (dayErr) {
+      stats.errors.push(`${label}: ${dayErr.message}`);
+      continue;
+    }
+
+    for (const meeting of dayMeetings ?? []) {
+      const meetingLeads = meeting.ttp_meeting_leads || [];
+      let linkValue = meeting.meeting_link;
+      if (!linkValue || String(linkValue) === "null" || String(linkValue).trim() === "") {
+        linkValue = "https://meet.google.com/new";
+      }
+
+      const meetTime = new Date(meeting.meeting_datetime);
+      const timeStr = meetTime.toLocaleString("en-IN", {
+        weekday: "short", day: "numeric", month: "short",
+        hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata",
+      });
+
+      await dispatchMeetingReminder(label, meeting.id, meetingLeads, linkValue, timeStr);
+      await supabase.from("ttp_meetings").update({ [flag]: true }).eq("id", meeting.id);
+      stats.meetings++;
+      console.log(`[Meeting-${label}] ✅ Reminders dispatched for meeting ${meeting.id}`);
+    }
+  }
+
+  // ── 2B: Time-based reminders: 1 hour / 30 min / 15 min / 5 min before ────────
+  const in65Min = new Date(nowUTC.getTime() + 65 * 60 * 1000).toISOString();
 
   const { data: upcomingMeetings, error: meetingError } = await supabase
     .from("ttp_meetings")
-    .select("id, meeting_datetime, meeting_link, reminder_30_sent, reminder_15_sent, reminder_5_sent, ttp_meeting_leads(ttp_leads(id, name, phone, assigned_user_id))")
+    .select("id, meeting_datetime, meeting_link, reminder_1hour_sent, reminder_30_sent, reminder_15_sent, reminder_5_sent, ttp_meeting_leads(ttp_leads(id, name, phone, assigned_user_id))")
     .eq("is_deleted", false)
     .gte("meeting_datetime", nowUTC.toISOString())
-    .lte("meeting_datetime", in35Min);
+    .lte("meeting_datetime", in65Min);
 
   if (meetingError) {
     stats.errors.push(`meetings: ${meetingError.message}`);
   } else {
     for (const meeting of upcomingMeetings ?? []) {
       const meetingLeads = meeting.ttp_meeting_leads || [];
-      const link = meeting.meeting_link ?? "(link not set)";
+      let linkValue = meeting.meeting_link;
+
+      if (!linkValue || String(linkValue) === "null" || String(linkValue).trim() === "") {
+        console.warn(`[Meeting] ⚠️ meeting_link missing for ${meeting.id}. Using fallback.`);
+        linkValue = "https://meet.google.com/new";
+      }
 
       const meetTime = new Date(meeting.meeting_datetime);
       const diffMinutes = (meetTime.getTime() - nowUTC.getTime()) / 60000;
@@ -157,91 +293,27 @@ serve(async (_req) => {
       console.log(`Meeting: ${meeting.id} | Diff: ${diffMinutes.toFixed(1)} min | Leads: ${meetingLeads.length}`);
 
       const timeStr = meetTime.toLocaleString("en-IN", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Kolkata",
+        weekday: "short", day: "numeric", month: "short",
+        hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata",
       });
 
-      const sendToLeads = async (timingLabel: string) => {
-        for (const ml of meetingLeads) {
-          const lead = ml.ttp_leads;
-          if (!lead) continue;
-
-          const { data: existingNotif } = await supabase
-            .from("ttp_meeting_notifications")
-            .select("id")
-            .eq("meeting_id", meeting.id)
-            .eq("lead_id", lead.id)
-            .eq("type", timingLabel)
-            .eq("status", "sent")
-            .limit(1);
-
-          if (existingNotif && existingNotif.length > 0) {
-            console.log(`[Meeting-${timingLabel}] Already sent to ${lead.name}, skipping.`);
-            continue;
-          }
-
-          let status = "failed";
-          if (lead.phone) {
-            console.log(`[WhatsApp] Sending template 'wron_successful' to: ${lead.phone}`);
-
-            // timeStr: "Tue, 24 Mar, 12:40 pm"
-            const parts = timeStr.split(",");
-            const meetingDate = parts[1]?.trim() || "";
-            const meetingTimeStr = parts[2]?.trim() || "";
-            const platform = link.includes("zoom") ? "Zoom" : "Google Meet";
-
-            const ok = await sendWhatsApp(lead.phone, null, {
-              name: "wron_successful",
-              values: [
-                lead.name ?? "Customer", // {{1}} Name
-                "Online Workshop",       // {{2}} Course
-                meetingDate,             // {{3}} Date
-                meetingTimeStr,          // {{4}} Time
-                platform,                // {{5}} Platform
-                link,                    // {{6}} Meeting Link
-              ],
-            });
-
-            status = ok ? "sent" : "failed";
-            if (!ok) console.error(`[WhatsApp] FAILED to ${lead.phone} for ${timingLabel} reminder`);
-          } else {
-            console.warn(`[Meeting] Skipping lead ${lead.id} — no phone number`);
-          }
-
-          const { error: notifInsertErr } = await supabase.from("ttp_meeting_notifications").insert({
-            meeting_id: meeting.id,
-            lead_id: lead.id,
-            type: timingLabel,
-            status,
-          });
-          if (notifInsertErr) console.error(`[MeetingNotif] Insert failed: ${notifInsertErr.message}`);
-
-          await insertNotification(
-            supabase,
-            lead.assigned_user_id,
-            `Meeting in ${timingLabel.replace("min", " Minutes")}`,
-            `You have a meeting with ${lead.name} in ${timingLabel.replace("min", "")} minutes`,
-            "meeting_reminder"
-          );
-        }
-      };
-
+      if (diffMinutes <= 62 && diffMinutes > 55) {
+        await dispatchMeetingReminder("1hour", meeting.id, meetingLeads, linkValue, timeStr);
+        if (!meeting.reminder_1hour_sent) await supabase.from("ttp_meetings").update({ reminder_1hour_sent: true }).eq("id", meeting.id);
+        stats.meetings++;
+      }
       if (diffMinutes <= 32 && diffMinutes > 25) {
-        await sendToLeads("30min");
+        await dispatchMeetingReminder("30min", meeting.id, meetingLeads, linkValue, timeStr);
         if (!meeting.reminder_30_sent) await supabase.from("ttp_meetings").update({ reminder_30_sent: true }).eq("id", meeting.id);
         stats.meetings++;
       }
       if (diffMinutes <= 17 && diffMinutes > 10) {
-        await sendToLeads("15min");
+        await dispatchMeetingReminder("15min", meeting.id, meetingLeads, linkValue, timeStr);
         if (!meeting.reminder_15_sent) await supabase.from("ttp_meetings").update({ reminder_15_sent: true }).eq("id", meeting.id);
         stats.meetings++;
       }
       if (diffMinutes <= 7 && diffMinutes > 2) {
-        await sendToLeads("5min");
+        await dispatchMeetingReminder("5min", meeting.id, meetingLeads, linkValue, timeStr);
         if (!meeting.reminder_5_sent) await supabase.from("ttp_meetings").update({ reminder_5_sent: true }).eq("id", meeting.id);
         stats.meetings++;
       }

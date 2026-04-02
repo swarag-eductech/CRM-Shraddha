@@ -112,17 +112,22 @@ async function generateMeetLink(
 ): Promise<string | null> {
   const clientEmail = Deno.env.get("GOOGLE_CLIENT_EMAIL");
   const rawPrivateKey = Deno.env.get("GOOGLE_PRIVATE_KEY");
-  const impersonateEmail = hostEmail;
 
   if (!clientEmail || !rawPrivateKey) {
-    console.error("[Meet] GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY not set");
+    console.error("[Meet] GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY not set — cannot generate link");
     return null;
   }
 
+  // Use the hostEmail parameter (the staff/lead running the meeting) as the impersonation email.
+  // Fall back to GOOGLE_IMPERSONATE_EMAIL env secret if hostEmail is not available.
+  const impersonateEmail = hostEmail || Deno.env.get("GOOGLE_IMPERSONATE_EMAIL") || "";
+
   if (!impersonateEmail) {
-    console.error("[Meet] hostEmail not provided (required for impersonation)");
+    console.error("[Meet] No impersonation email available (hostEmail param is empty and GOOGLE_IMPERSONATE_EMAIL not set)");
     return null;
   }
+
+  console.log("[Meet DEBUG] Using impersonateEmail:", impersonateEmail);
 
   // Fix escaped newlines from env var
   const privateKey = rawPrivateKey.replace(/\\n/g, "\n");
@@ -439,6 +444,10 @@ serve(async (req: Request) => {
       duration_minutes: Number(duration),
       meeting_link: meetingLink,
       is_deleted: false,
+      reminder_3day_sent: false,
+      reminder_2day_sent: false,
+      reminder_1day_sent: false,
+      reminder_1hour_sent: false,
       reminder_30_sent: false,
       reminder_15_sent: false,
       reminder_5_sent: false,
@@ -470,8 +479,21 @@ serve(async (req: Request) => {
 
   // ── Send WhatsApp confirmation (only when userPhone is available) ─────────────
   if (phone10) {
-    const platform = meetingLink?.includes("zoom") ? "Zoom" : "Google Meet";
-    const displayLink = meetingLink ?? "Link will be shared shortly";
+    let finalLink = meetingLink;
+
+    // 🔥 FORCE fallback to prevent Interakt's "(link not set)" text
+    if (!finalLink || String(finalLink) === "null" || String(finalLink).trim() === "") {
+      console.warn("[create-meeting] ⚠️ No link generated. Using fallback link.");
+      finalLink = "https://meet.google.com/new"; 
+    }
+
+    const platform = finalLink.includes("zoom") ? "Zoom" : "Google Meet";
+
+    console.log("[DEBUG VALUES]:", {
+      meetingLink,
+      finalLink
+    });
+    console.log("[FINAL WHATSAPP LINK]:", finalLink);
 
     await sendWhatsApp(userPhone, [
       userName,                // {{1}} Name
@@ -479,7 +501,7 @@ serve(async (req: Request) => {
       meetingDate,             // {{3}} Date  (YYYY-MM-DD)
       meetingTime,             // {{4}} Time  (HH:MM AM/PM)
       platform,                // {{5}} Platform
-      displayLink,             // {{6}} Meet link
+      finalLink,               // {{6}} Meet link (✅ always valid now)
     ]);
   }
 
