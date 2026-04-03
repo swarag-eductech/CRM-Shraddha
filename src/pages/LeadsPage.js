@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MdSearch, MdAdd, MdClose, MdRefresh, MdPhone, MdCalendarToday, MdExpandMore, MdExpandLess, MdDelete } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
 import { createLead, updateLeadStatus, addFollowup, softDeleteLead } from '../api';
 import { formatIST } from '../utils/time';
-import { SourceBadge } from '../utils/sourceBadge';
+import { SourceBadge, ProgramBadge } from '../utils/sourceBadge';
+import { useAuth } from '../hooks/useAuth';
 
 const STATUS_OPTIONS = ['new', 'contacted', 'warm', 'converted', 'lost'];
 const STATUS_COLORS = {
@@ -164,7 +165,7 @@ function FollowupModal({ lead, onClose }) {
 }
 
 function AddLeadModal({ onClose, onAdd }) {
-  const [form, setForm] = useState({ name: '', phone: '', email: '', city: '', source: 'manual' });
+  const [form, setForm] = useState({ name: '', phone: '', email: '', city: '', source: 'manual', lead_program: 'student_abacus_class' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -211,6 +212,13 @@ function AddLeadModal({ onClose, onAdd }) {
                 <option value="intrakt">💬 WhatsApp</option>
               </select>
             </div>
+            <div className="form-group">
+              <label>Program</label>
+              <select className="form-input" value={form.lead_program} onChange={e => setForm(f => ({ ...f, lead_program: e.target.value }))}>
+                <option value="student_abacus_class">🧮 Abacus Student Class</option>
+                <option value="ttp_teacher_training">👩‍🏫 TTP Teacher Training</option>
+              </select>
+            </div>
           </div>
           <div className="form-actions" style={{ marginTop: 20 }}>
             <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Add Lead'}</button>
@@ -223,25 +231,32 @@ function AddLeadModal({ onClose, onAdd }) {
 }
 
 export default function LeadsPage() {
+  const { userId, isAdmin, loading: authLoading } = useAuth();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [programFilter, setProgramFilter] = useState('all');
   const [showModal, setShowModal] = useState(false);
   const [followupLead, setFollowupLead] = useState(null);
 
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async () => {
+    if (authLoading) return;
     setLoading(true); setError('');
-    const { data, error: err } = await supabase
+    let query = supabase
       .from('ttp_leads')
       .select('*, ttp_followups(id, followup_number, next_followup_at, status, reminder_sent, dismissed, is_deleted)')
       .eq('is_deleted', false)
       .order('created_at', { ascending: false });
+    if (!isAdmin && userId) {
+      query = query.eq('assigned_user_id', userId);
+    }
+    const { data, error: err } = await query;
     setLoading(false);
     if (err) { setError(err.message); return; }
     setLeads(data || []);
-  };
+  }, [userId, isAdmin, authLoading]);
 
   const handleDeleteLead = async (leadId, leadName) => {
     if (!window.confirm(`Delete lead "${leadName}"? This cannot be undone.`)) return;
@@ -259,8 +274,7 @@ export default function LeadsPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_followups' }, () => fetchLeads())
       .subscribe();
     return () => supabase.removeChannel(ch);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchLeads]);
 
   const handleStatusUpdate = (leadId, newStatus) => {
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: newStatus } : l));
@@ -272,13 +286,34 @@ export default function LeadsPage() {
     const q = search.toLowerCase();
     const matchSearch = !q || (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q) || (l.city || '').toLowerCase().includes(q) || (l.email || '').toLowerCase().includes(q);
     const matchStatus = statusFilter === 'all' || l.status === statusFilter;
-    return matchSearch && matchStatus;
+    const matchProgram = programFilter === 'all' || l.lead_program === programFilter;
+    return matchSearch && matchStatus && matchProgram;
   });
 
   const cities = [...new Set(leads.map(l => l.city).filter(Boolean))].sort();
 
   return (
     <div>
+      {/* Program filter */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginRight: 2 }}>PROGRAM:</span>
+        {[{ key: 'all', label: 'All Programs' }, { key: 'student_abacus_class', label: '🧮 Abacus Students' }, { key: 'ttp_teacher_training', label: '👩‍🏫 TTP Teachers' }].map(({ key, label }) => {
+          const active = programFilter === key;
+          const cnt = key === 'all' ? leads.length : leads.filter(l => l.lead_program === key).length;
+          return (
+            <button key={key} onClick={() => setProgramFilter(key)} style={{
+              padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              border: active ? 'none' : '1.5px solid var(--border)',
+              background: active ? 'var(--gradient)' : '#fff',
+              color: active ? '#fff' : 'var(--text-muted)',
+              boxShadow: active ? '0 2px 8px rgba(255,102,0,0.15)' : 'none',
+            }}>
+              {label} <span style={{ opacity: 0.7 }}>{cnt}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Status pill filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
         {[{ key: 'all', label: 'All' }, ...STATUS_OPTIONS.map(s => ({ key: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))].map(({ key, label }) => {
@@ -360,7 +395,7 @@ export default function LeadsPage() {
             <table className="crm-table">
               <thead>
                 <tr>
-                  <th>#</th><th>Name</th><th>Phone</th><th>Email</th><th>City</th><th>Source</th><th>Follow-ups</th><th>Status</th><th>Added</th><th>Actions</th>
+                  <th>#</th><th>Name</th><th>Phone</th><th>Email</th><th>City</th><th>Source</th><th>Program</th><th>Follow-ups</th><th>Status</th><th>Added</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -384,6 +419,7 @@ export default function LeadsPage() {
                       </td>
                       <td style={{ fontSize: 13 }}>{lead.city || '—'}</td>
                       <td><SourceBadge source={lead.source} /></td>
+                      <td><ProgramBadge program={lead.lead_program} /></td>
                       <td>
                         <button onClick={() => setFollowupLead(lead)} style={{
                           display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 20,

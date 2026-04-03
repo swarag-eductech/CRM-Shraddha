@@ -5,6 +5,7 @@ import { FaWhatsapp } from 'react-icons/fa';
 import { useLeads } from '../hooks/useLeads';
 import { useTodayTasks } from '../hooks/useTodayTasks';
 import FollowupPopup from '../components/FollowupPopup';
+import { useAuth } from '../hooks/useAuth';
 
 function formatTimeAgo(dateStr) {
   if (!dateStr) return '—';
@@ -85,7 +86,8 @@ const _statCards = [
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { leads, loading, refetch } = useLeads();
+  const { userId, isAdmin } = useAuth();
+  const { leads, loading, refetch } = useLeads('all', isAdmin ? null : userId || null);
   const { followups: todayFollowups, meetings: todayMeetings } = useTodayTasks();
   const today = new Date();
 

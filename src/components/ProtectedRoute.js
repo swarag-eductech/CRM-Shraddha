@@ -5,27 +5,21 @@ import { supabase } from '../supabaseClient';
 export default function ProtectedRoute({ children, requireAdmin = false }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     async function checkAuth() {
       const { data: { user }, error } = await supabase.auth.getUser();
-      
       if (error || !user) {
         setUser(null);
       } else {
-        // If requireAdmin is true, check for metadata
-        if (requireAdmin && user.user_metadata?.is_admin !== true) {
-          await supabase.auth.signOut();
-          setUser(null);
-        } else {
-          setUser(user);
-        }
+        setUser(user);
+        setIsAdmin(user.user_metadata?.is_admin === true);
       }
       setLoading(false);
     }
-    
     checkAuth();
-  }, [requireAdmin]);
+  }, []);
 
   if (loading) {
     return (
@@ -38,9 +32,11 @@ export default function ProtectedRoute({ children, requireAdmin = false }) {
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
+  // Not logged in at all → login page
+  if (!user) return <Navigate to="/login" replace />;
+
+  // Admin-only route but user is not admin → redirect to their pool
+  if (requireAdmin && !isAdmin) return <Navigate to="/pool" replace />;
 
   return children;
 }

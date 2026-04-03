@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MdNotifications, MdSearch, MdMenu, MdDoneAll, MdClose } from 'react-icons/md';
 import { useNotifications } from '../hooks/useNotifications';
+import { useAuth } from '../hooks/useAuth';
 
 const pageTitles = {
-  dashboard:  { title: 'Dashboard',    sub: 'Welcome back, Admin!' },
+  dashboard:  { title: 'Dashboard',    sub: null },  // personalised per-user below
   leads:      { title: 'Leads',        sub: 'Manage and track all your leads' },
   kanban:     { title: 'Kanban Board', sub: 'Drag and drop leads across stages' },
   meetings:   { title: 'Meetings',     sub: 'Schedule and manage meetings' },
@@ -26,8 +27,17 @@ function timeAgo(ts) {
 export default function Navbar({ activePage, openMobile }) {
   const info = pageTitles[activePage] || pageTitles.dashboard;
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
+  const { userName, userRole } = useAuth();
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
+
+  // Generate initials from name (up to 2 chars)
+  const initials = userName
+    ? userName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+    : '??';
+  const roleLabel = userRole === 'admin' ? 'Admin' : 'Staff';
+
+  const subtitle = info.sub ?? (userName ? `Welcome back, ${userName}!` : 'Welcome back!');
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -47,7 +57,7 @@ export default function Navbar({ activePage, openMobile }) {
         </button>
         <div className="navbar-left">
           <h1>{info.title}</h1>
-          <p>{info.sub}</p>
+          <p>{subtitle}</p>
         </div>
       </div>
 
@@ -162,10 +172,10 @@ export default function Navbar({ activePage, openMobile }) {
         </div>
 
         <div className="navbar-avatar">
-          <div className="avatar-circle">SA</div>
+          <div className="avatar-circle">{initials}</div>
           <div className="avatar-info">
-            <span>Shraddha Admin</span>
-            <small>Super Admin</small>
+            <span>{userName || '—'}</span>
+            <small>{roleLabel}</small>
           </div>
         </div>
       </div>

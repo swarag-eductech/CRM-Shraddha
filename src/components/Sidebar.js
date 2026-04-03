@@ -2,13 +2,15 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   MdDashboard, MdPeople, MdEvent, MdMessage, MdSettings,
-  MdLogout, MdSchool, MdToday, MdApps, MdInsertChart
+  MdLogout, MdSchool, MdToday, MdApps, MdInsertChart, MdPool
 } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
+import { useAuth } from '../hooks/useAuth';
 
 const navItems = [
   { id: 'dashboard',  label: 'Dashboard',     icon: <MdDashboard />,  path: '/' },
+  { id: 'pool',       label: 'Lead Pool',      icon: <MdPool />,       path: '/pool' },
   { id: 'leads',      label: 'Leads',         icon: <MdPeople />,     path: '/leads' },
   { id: 'kanban',     label: 'Kanban Board',  icon: <MdApps />,       path: '/kanban' },
   { id: 'meetings',   label: 'Meetings',      icon: <MdEvent />,      path: '/meetings' },
@@ -19,6 +21,7 @@ const navItems = [
 ];
 
 export default function Sidebar({ mobileOpen, closeMobile }) {
+  const { isAdmin } = useAuth();
   return (
     <>
       <div className={`sidebar-overlay ${mobileOpen ? 'active' : ''}`} onClick={closeMobile} />
@@ -59,14 +62,16 @@ export default function Sidebar({ mobileOpen, closeMobile }) {
             Settings
           </NavLink>
           
-          <NavLink
-            to="/admin"
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            onClick={closeMobile}
-          >
-            <span className="nav-icon"><MdSchool /></span>
-            Admin Control
-          </NavLink>
+          {isAdmin && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              onClick={closeMobile}
+            >
+              <span className="nav-icon"><MdSchool /></span>
+              Admin Control
+            </NavLink>
+          )}
         </nav>
 
         <div className="sidebar-footer">

@@ -20,10 +20,21 @@ export async function getLeads(statusFilter = 'all') {
   return data || [];
 }
 
-export async function createLead({ name, phone, email, city, source = 'manual' }) {
+export async function createLead({ name, phone, email, city, source = 'manual', lead_program = 'student_abacus_class' }) {
   const { data, error } = await supabase
     .from('ttp_leads')
-    .insert([{ name, phone, email: email || null, city: city || null, status: 'new', source }])
+    .insert([{ name, phone, email: email || null, city: city || null, status: 'new', source, lead_program }])
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateLead(leadId, updates) {
+  const { data, error } = await supabase
+    .from('ttp_leads')
+    .update(updates)
+    .eq('id', leadId)
     .select()
     .single();
   if (error) throw error;
@@ -48,6 +59,147 @@ export async function softDeleteLead(leadId) {
     .update({ is_deleted: true })
     .eq('id', leadId);
   if (error) throw error;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEAD POOL & CLAIM
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** All unassigned leads in the pool (visible to all users) */
+export async function getLeadPool() {
+  const { data, error } = await supabase
+    .from('ttp_leads')
+    .select('*')
+    .is('assigned_user_id', null)
+    .eq('is_deleted', false)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+/** Leads assigned to a specific user */
+export async function getMyLeads(userId) {
+  const { data, error } = await supabase
+    .from('ttp_leads')
+    .select('*, ttp_followups(id, followup_number, next_followup_at, status, note, dismissed, is_deleted)')
+    .eq('assigned_user_id', userId)
+    .eq('is_deleted', false)
+    .order('claimed_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+/**
+ * Atomic claim: only succeeds if assigned_user_id IS NULL.
+ * Prevents double-claiming the same lead.
+ */
+export async function claimLead(leadId, userId) {
+  const { data, error } = await supabase
+    .from('ttp_leads')
+    .update({ assigned_user_id: userId, claimed_at: new Date().toISOString() })
+    .eq('id', leadId)
+    .is('assigned_user_id', null)
+    .select()
+    .single();
+  if (error) throw error;
+  if (!data) throw new Error('Lead already claimed by another user.');
+  return data;
+}
+
+/** Admin: all leads with crm_users join for assigned user name */
+export async function getLeadsForAdmin() {
+  const { data, error } = await supabase
+    .from('ttp_leads')
+    .select('*, crm_users(id, name, email)')
+    .eq('is_deleted', false)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+/** Admin: reassign a lead to another user (or null to put back in pool) */
+export async function reassignLead(leadId, newUserId) {
+  const { data, error } = await supabase
+    .from('ttp_leads')
+    .update({
+      assigned_user_id: newUserId || null,
+      claimed_at: newUserId ? new Date().toISOString() : null,
+    })
+    .eq('id', leadId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRM USERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getCRMUsers() {
+  const { data, error } = await supabase
+    .from('crm_users')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+/** Upsert a crm_users record (called on login to ensure profile exists).
+ *  If the user already exists, only name/email are refreshed — the admin-managed
+ *  role is preserved so it is never overwritten by the login flow. */
+export async function upsertCRMUser({ id, name, email, role = 'user' }) {
+  // Check whether this user already has a profile row
+  const { data: existing } = await supabase
+    .from('crm_users')
+    .select('id')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (existing) {
+    // User exists — refresh name & email only, keep role intact
+    const { data, error } = await supabase
+      .from('crm_users')
+      .update({ name, email })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  } else {
+    // New user — insert with the provided role
+    const { data, error } = await supabase
+      .from('crm_users')
+      .insert([{ id, name, email, role }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+}
+
+export async function updateCRMUserRole(userId, role) {
+  const { data, error } = await supabase
+    .from('crm_users')
+    .update({ role })
+    .eq('id', userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Admin: create a new auth user via the create-user Edge Function.
+ * Returns { success, user } or throws on error.
+ */
+export async function createCRMUser({ name, email, password, role = 'user' }) {
+  const { data, error } = await supabase.functions.invoke('create-user', {
+    body: { name, email, password, role },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -144,7 +296,7 @@ export async function getMeetings() {
   return data || [];
 }
 
-export async function scheduleMeeting({ leadIds, meetingDatetime, meetingLink, hostEmail, traineeEmails, userName, userPhone }) {
+export async function scheduleMeeting({ leadIds, meetingDatetime, meetingLink, hostEmail, hostName, hostPhone, traineeEmails, userName, userPhone, meetingType, meetingProgram }) {
   // 1. Prepare data for the edge function
   // We need IST date and 12h time format for the edge function's parser
   const dt = new Date(meetingDatetime);
@@ -170,10 +322,14 @@ export async function scheduleMeeting({ leadIds, meetingDatetime, meetingLink, h
       meetingDate,
       meetingTime,
       hostEmail: hostEmail || null,
+      hostName: hostName || '',
+      hostPhone: hostPhone || '',
       traineeEmails: traineeEmails || [],
-      duration: 30, // Default duration
-      courseName: 'Meeting', // Can be customized
-      meetingLink: meetingLink || null, // pass manual link; skips Google Meet generation if set
+      duration: 30,
+      courseName: 'Meeting',
+      meetingLink: meetingLink || null,
+      meetingType: meetingType || 'orientation',
+      meetingProgram: meetingProgram || 'ttp_teacher_training',
     }
   });
 

@@ -2,11 +2,28 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ─── Per-type Interakt template names ────────────────────────────────────────
+function templateNameForType(meetingType: string): string {
+  const map: Record<string, string> = {
+    orientation: "meeting_orientation_v2",
+    marketing:   "meeting_marketing_v2",
+    doubt:       "meeting_doubt_v2",
+  };
+  return map[meetingType] || "wron_successful";
+}
+
+// Language codes MUST match exactly what was approved in Interakt/Meta
+// meeting_orientation_v2 → en_GB  (created as English UK)
+// all others             → en     (created as English)
+function templateLangForType(meetingType: string): string {
+  return meetingType === "orientation" ? "en_GB" : "en";
+}
+
 // ─── WhatsApp sender via Interakt API ────────────────────────────────────────
 async function sendWhatsApp(
   phone: string,
   message: string | null,
-  template?: { name: string; values: string[] }
+  template?: { name: string; lang?: string; values: string[] }
 ): Promise<boolean> {
   const apiKey = Deno.env.get("INTERAKT_API_KEY");
 
@@ -32,7 +49,7 @@ async function sendWhatsApp(
       type: "Template",
       template: {
         name: template?.name ?? "wron_successful",
-        languageCode: "en_GB",
+        languageCode: template?.lang ?? "en",
         bodyValues: template?.values ?? [],
       },
     };
@@ -52,7 +69,7 @@ async function sendWhatsApp(
     const responseText = await res.text();
 
     if (!res.ok) {
-      console.error(`[WhatsApp] ❌ Failed for ${formattedPhone} (${res.status}): ${responseText}`);
+      console.error(`[WhatsApp] ❌ Failed for ${formattedPhone} (${res.status}): ${responseText} | Template: ${body.template.name}`);
       return false;
     }
 
@@ -150,7 +167,8 @@ serve(async (_req) => {
     meetingId: string,
     meetingLeads: any[],
     linkValue: string,
-    timeStr: string
+    timeStr: string,
+    meetingType = 'orientation'
   ) => {
     for (const ml of meetingLeads) {
       const lead = ml.ttp_leads;
@@ -162,11 +180,10 @@ serve(async (_req) => {
         .eq("meeting_id", meetingId)
         .eq("lead_id", lead.id)
         .eq("type", label)
-        .eq("status", "sent")
         .limit(1);
 
       if (existingNotif && existingNotif.length > 0) {
-        console.log(`[Meeting-${label}] Already sent to ${lead.name}, skipping.`);
+        console.log(`[Meeting-${label}] Already attempted for ${lead.name}, skipping.`);
         continue;
       }
 
@@ -179,7 +196,8 @@ serve(async (_req) => {
         const platform = linkValue?.includes("zoom") ? "Zoom" : "Google Meet";
 
         const ok = await sendWhatsApp(lead.phone, null, {
-          name: "wron_successful",
+          name: templateNameForType(meetingType),
+          lang: templateLangForType(meetingType),
           values: [
             lead.name ?? "Customer", // {{1}} Name
             "Online Workshop",       // {{2}} Course
@@ -234,7 +252,7 @@ serve(async (_req) => {
 
     const { data: dayMeetings, error: dayErr } = await supabase
       .from("ttp_meetings")
-      .select("id, meeting_datetime, meeting_link, ttp_meeting_leads(ttp_leads(id, name, phone, assigned_user_id))")
+      .select("id, meeting_datetime, meeting_link, meeting_type, ttp_meeting_leads(ttp_leads(id, name, phone, assigned_user_id))")
       .eq("is_deleted", false)
       .eq(flag, false)
       .gte("meeting_datetime", rangeStart)
@@ -258,7 +276,7 @@ serve(async (_req) => {
         hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata",
       });
 
-      await dispatchMeetingReminder(label, meeting.id, meetingLeads, linkValue, timeStr);
+      await dispatchMeetingReminder(label, meeting.id, meetingLeads, linkValue, timeStr, meeting.meeting_type || 'orientation');
       await supabase.from("ttp_meetings").update({ [flag]: true }).eq("id", meeting.id);
       stats.meetings++;
       console.log(`[Meeting-${label}] ✅ Reminders dispatched for meeting ${meeting.id}`);
@@ -270,7 +288,7 @@ serve(async (_req) => {
 
   const { data: upcomingMeetings, error: meetingError } = await supabase
     .from("ttp_meetings")
-    .select("id, meeting_datetime, meeting_link, reminder_1hour_sent, reminder_30_sent, reminder_15_sent, reminder_5_sent, ttp_meeting_leads(ttp_leads(id, name, phone, assigned_user_id))")
+    .select("id, meeting_datetime, meeting_link, meeting_type, reminder_1hour_sent, reminder_30_sent, reminder_15_sent, reminder_5_sent, ttp_meeting_leads(ttp_leads(id, name, phone, assigned_user_id))")
     .eq("is_deleted", false)
     .gte("meeting_datetime", nowUTC.toISOString())
     .lte("meeting_datetime", in65Min);
@@ -298,22 +316,22 @@ serve(async (_req) => {
       });
 
       if (diffMinutes <= 62 && diffMinutes > 55) {
-        await dispatchMeetingReminder("1hour", meeting.id, meetingLeads, linkValue, timeStr);
+        await dispatchMeetingReminder("1hour", meeting.id, meetingLeads, linkValue, timeStr, meeting.meeting_type || 'orientation');
         if (!meeting.reminder_1hour_sent) await supabase.from("ttp_meetings").update({ reminder_1hour_sent: true }).eq("id", meeting.id);
         stats.meetings++;
       }
       if (diffMinutes <= 32 && diffMinutes > 25) {
-        await dispatchMeetingReminder("30min", meeting.id, meetingLeads, linkValue, timeStr);
+        await dispatchMeetingReminder("30min", meeting.id, meetingLeads, linkValue, timeStr, meeting.meeting_type || 'orientation');
         if (!meeting.reminder_30_sent) await supabase.from("ttp_meetings").update({ reminder_30_sent: true }).eq("id", meeting.id);
         stats.meetings++;
       }
       if (diffMinutes <= 17 && diffMinutes > 10) {
-        await dispatchMeetingReminder("15min", meeting.id, meetingLeads, linkValue, timeStr);
+        await dispatchMeetingReminder("15min", meeting.id, meetingLeads, linkValue, timeStr, meeting.meeting_type || 'orientation');
         if (!meeting.reminder_15_sent) await supabase.from("ttp_meetings").update({ reminder_15_sent: true }).eq("id", meeting.id);
         stats.meetings++;
       }
       if (diffMinutes <= 7 && diffMinutes > 2) {
-        await dispatchMeetingReminder("5min", meeting.id, meetingLeads, linkValue, timeStr);
+        await dispatchMeetingReminder("5min", meeting.id, meetingLeads, linkValue, timeStr, meeting.meeting_type || 'orientation');
         if (!meeting.reminder_5_sent) await supabase.from("ttp_meetings").update({ reminder_5_sent: true }).eq("id", meeting.id);
         stats.meetings++;
       }

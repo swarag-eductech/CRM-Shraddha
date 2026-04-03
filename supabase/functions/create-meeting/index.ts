@@ -118,12 +118,13 @@ async function generateMeetLink(
     return null;
   }
 
-  // Use the hostEmail parameter (the staff/lead running the meeting) as the impersonation email.
-  // Fall back to GOOGLE_IMPERSONATE_EMAIL env secret if hostEmail is not available.
-  const impersonateEmail = hostEmail || Deno.env.get("GOOGLE_IMPERSONATE_EMAIL") || "";
+  // ALWAYS impersonate the fixed Workspace account configured with domain-wide delegation.
+  // hostEmail (lead / trainer email) is only added as a calendar attendee — it cannot be
+  // impersonated because regular Gmail accounts don't support service-account DWD.
+  const impersonateEmail = Deno.env.get("GOOGLE_IMPERSONATE_EMAIL") || "";
 
   if (!impersonateEmail) {
-    console.error("[Meet] No impersonation email available (hostEmail param is empty and GOOGLE_IMPERSONATE_EMAIL not set)");
+    console.error("[Meet] GOOGLE_IMPERSONATE_EMAIL not set — cannot generate Meet link");
     return null;
   }
 
@@ -215,10 +216,35 @@ const hangoutLink =
   return hangoutLink;
 }
 
+// ─── Per-type Interakt template names ─────────────────────────────────────────
+// Each meeting type maps to a separate approved Interakt template.
+// orientation      → "meeting_orientation_v2"     (👋 Orientation Training)
+// marketing        → "meeting_marketing_v2"        (📈 Marketing Session)
+// doubt            → "meeting_doubt_v2"            (❓ Doubt Clearing)
+// host_notification→ "meeting_host_notification"   (🔔 Host assignment alert)
+// default          → "wron_successful"             (generic meeting confirmation)
+function templateNameForType(meetingType: string): string {
+  const map: Record<string, string> = {
+    orientation:       "meeting_orientation_v2",
+    marketing:         "meeting_marketing_v2",
+    doubt:             "meeting_doubt_v2",
+    host_notification: "meeting_host_notification",
+  };
+  return map[meetingType] || "wron_successful";
+}
+
+// Language codes MUST match exactly what was approved in Interakt/Meta
+// meeting_orientation_v2 → en_GB  (created as English UK)
+// all others             → en     (created as English)
+function templateLangForType(meetingType: string): string {
+  return meetingType === "orientation" ? "en_GB" : "en";
+}
+
 // ─── Send WhatsApp via Interakt ────────────────────────────────────────────────
 async function sendWhatsApp(
   phone: string,
-  templateValues: string[]
+  templateValues: string[],
+  meetingType = "default"
 ): Promise<void> {
   const apiKey = Deno.env.get("INTERAKT_API_KEY");
   if (!apiKey) {
@@ -236,8 +262,8 @@ async function sendWhatsApp(
     callbackData: "CRM",
     type: "Template",
     template: {
-      name: "wron_successful",
-      languageCode: "en_GB",
+      name: templateNameForType(meetingType),
+      languageCode: templateLangForType(meetingType),
       bodyValues: templateValues,
     },
   };
@@ -319,13 +345,24 @@ serve(async (req: Request) => {
   const {
     userName,
     userPhone = '',
-    meetingDate,   // "YYYY-MM-DD"
-    meetingTime,   // "HH:MM AM/PM"
-    duration = 30, // minutes
+    meetingDate,    // "YYYY-MM-DD"
+    meetingTime,    // "HH:MM AM/PM"
+    duration = 30,  // minutes
     courseName = "Online Workshop",
     hostEmail = null,
     traineeEmails = [],
-    meetingLink: providedMeetingLink = null, // pre-provided link (skips Google Meet generation)
+    meetingLink: providedMeetingLink = null,
+    // ── New fields ──────────────────────────────────────────────
+    meetingType    = 'orientation',   // orientation | marketing | doubt
+    meetingProgram = 'ttp_teacher_training', // ttp_teacher_training | abacus | vedic_math
+    meetingTopic   = '',
+    hostId         = null,
+    hostName       = '',
+    hostPhone      = '',     // Host/trainer phone number for WhatsApp notification
+    createdById    = null,
+    createdByName  = '',
+    // Optional: comma-separated "name|email|userId" attendees from the form
+    attendees      = [],
   } = body;
 
   // ── Validate required fields ─────────────────────────────────────────────────
@@ -390,17 +427,15 @@ serve(async (req: Request) => {
     );
   }
 
-  // ── Generate Google Meet link (only when hostEmail is available) ──────────────────────
+  // ── Generate Google Meet link (always attempt — impersonation uses GOOGLE_IMPERSONATE_EMAIL) ──
   let meetingLink: string | null = providedMeetingLink;
-  if (!meetingLink && hostEmail) {
+  if (!meetingLink) {
     meetingLink = await generateMeetLink(
       meetingDatetime,
       Number(duration),
-      hostEmail,
+      hostEmail || "",
       traineeEmails
     );
-  } else if (!meetingLink) {
-    console.log("[create-meeting] No hostEmail and no pre-provided link — meeting link will be null");
   }
 
   // ── Upsert lead in ttp_leads (only when userPhone is provided) ───────────────────────
@@ -440,17 +475,26 @@ serve(async (req: Request) => {
   const { data: meeting, error: meetingErr } = await supabase
     .from("ttp_meetings")
     .insert({
-      meeting_datetime: meetingDatetime,
-      duration_minutes: Number(duration),
-      meeting_link: meetingLink,
-      is_deleted: false,
+      meeting_datetime:   meetingDatetime,
+      duration_minutes:   Number(duration),
+      meeting_link:       meetingLink,
+      is_deleted:         false,
       reminder_3day_sent: false,
       reminder_2day_sent: false,
       reminder_1day_sent: false,
       reminder_1hour_sent: false,
-      reminder_30_sent: false,
-      reminder_15_sent: false,
-      reminder_5_sent: false,
+      reminder_30_sent:   false,
+      reminder_15_sent:   false,
+      reminder_5_sent:    false,
+      // ── New type / program / host fields ──────────────────────
+      meeting_type:       meetingType,
+      meeting_program:    meetingProgram,
+      meeting_topic:      meetingTopic || null,
+      host_id:            hostId    || null,
+      host_name:          hostName  || hostEmail || null,
+      host_email:         hostEmail || null,
+      created_by_id:      createdById   || null,
+      created_by_name:    createdByName || null,
     })
     .select("id")
     .single();
@@ -464,6 +508,78 @@ serve(async (req: Request) => {
   }
 
   console.log(`[create-meeting] Meeting created: ${meeting.id}`);
+
+  // ── Seed attendance stubs for all attendees (host + trainees) ────────────────
+  const attendanceRows = [];
+  if (attendees && Array.isArray(attendees) && attendees.length > 0) {
+    // attendees: [{ user_id, user_name, user_email }]
+    for (const a of attendees) {
+      attendanceRows.push({
+        meeting_id: meeting.id,
+        user_id:    a.user_id || null,
+        user_name:  a.user_name || a.user_email || 'Unknown',
+        user_email: a.user_email || null,
+        status:     'absent', // default — will be marked during meeting
+      });
+    }
+  } else if (traineeEmails && traineeEmails.length > 0) {
+    // Fallback: seed from traineeEmails array
+    for (const email of traineeEmails) {
+      if (!email) continue;
+      attendanceRows.push({
+        meeting_id: meeting.id,
+        user_id:    null,
+        user_name:  email,
+        user_email: email,
+        status:     'absent',
+      });
+    }
+  }
+  if (attendanceRows.length > 0) {
+    const { error: attErr } = await supabase.from('meeting_attendance').insert(attendanceRows);
+    if (attErr) console.error('[create-meeting] Attendance seed failed:', attErr.message);
+    else console.log(`[create-meeting] Seeded ${attendanceRows.length} attendance rows`);
+  }
+
+  // ── Send WhatsApp notification to host/trainer ──────────────────────────────
+  const hostDigits = String(hostPhone || '').replace(/\D/g, '');
+  const hostPhone10 = hostDigits.startsWith('91') && hostDigits.length === 12
+    ? hostDigits.slice(2) : hostDigits;
+
+  if (hostPhone10) {
+    // Build attendee names list (exclude the host themselves)
+    const traineeNames = attendees && attendees.length > 0
+      ? attendees
+          .filter((a: any) => a.user_email !== hostEmail)
+          .map((a: any) => a.user_name || a.user_email)
+          .filter(Boolean)
+          .join(', ')
+      : traineeEmails.filter(Boolean).join(', ');
+
+    const meetingTypeLabel: Record<string, string> = {
+      orientation: 'Orientation', marketing: 'Marketing', doubt: 'Doubt Clearing',
+    };
+    const programLabel: Record<string, string> = {
+      ttp_teacher_training: 'TTP Teacher Training', abacus: 'Abacus', vedic_math: 'Vedic Math',
+    };
+
+    let hostLink = meetingLink;
+    if (!hostLink || String(hostLink) === 'null' || String(hostLink).trim() === '') {
+      hostLink = 'https://meet.google.com/new';
+    }
+
+    await sendWhatsApp(hostPhone, [
+      hostName || 'Trainer',                                         // {{1}} Host name
+      meetingDate,                                                   // {{2}} Date
+      meetingTime,                                                   // {{3}} Time
+      meetingTypeLabel[meetingType] || meetingType,                  // {{4}} Meeting type
+      programLabel[meetingProgram] || meetingProgram,               // {{5}} Program
+      traineeNames || 'No trainees yet',                             // {{6}} Attendees
+      hostLink,                                                      // {{7}} Meet link
+    ], 'host_notification');
+
+    console.log(`[create-meeting] Host notification sent to ${hostPhone10}`);
+  }
 
   // ── Link primary lead to meeting via ttp_meeting_leads ───────────────────────
   if (primaryLeadId) {
@@ -502,7 +618,7 @@ serve(async (req: Request) => {
       meetingTime,             // {{4}} Time  (HH:MM AM/PM)
       platform,                // {{5}} Platform
       finalLink,               // {{6}} Meet link (✅ always valid now)
-    ]);
+    ], meetingType);
   }
 
   // ── Success response ──────────────────────────────────────────────────────────

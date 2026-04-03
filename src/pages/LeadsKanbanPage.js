@@ -4,6 +4,7 @@ import { MdRefresh, MdPeople, MdAccessTime, MdHistory } from 'react-icons/md';
 import { supabase } from '../supabaseClient';
 import { updateLeadStatus } from '../api';
 import LeadModal from '../components/LeadModal';
+import { useAuth } from '../hooks/useAuth';
 
 /* @hello-pangea/dnd works better with React 18/19 than react-beautiful-dnd */
 /* but this hack is still helpful to ensure the Droppable mounts correctly */
@@ -136,20 +137,26 @@ function LeadCard({ lead, col, onClick, dragProvided, isDragging }) {
 /* Main board                                                           */
 /* ------------------------------------------------------------------ */
 export default function LeadsKanbanPage() {
+  const { userId, isAdmin, loading: authLoading } = useAuth();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState(null);
 
   const fetchLeads = useCallback(async () => {
+    if (authLoading) return;
     setLoading(true);
-    const { data } = await supabase
+    let query = supabase
       .from('ttp_leads')
       .select('id, name, phone, city, status, created_at, ttp_followups(id, next_followup_at, status)')
       .eq('is_deleted', false)
       .order('created_at', { ascending: false });
+    if (!isAdmin && userId) {
+      query = query.eq('assigned_user_id', userId);
+    }
+    const { data } = await query;
     setLoading(false);
     setLeads(data || []);
-  }, []);
+  }, [userId, isAdmin, authLoading]);
 
   useEffect(() => {
     fetchLeads();

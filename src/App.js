@@ -13,6 +13,7 @@ import TodayTasksPage from './pages/TodayTasksPage';
 import LeadsKanbanPage from './pages/LeadsKanbanPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import AdminDashboard from './pages/AdminDashboard';
+import LeadPoolPage from './pages/LeadPoolPage';
 
 // New Login & Protection Components
 import LoginPage from './pages/AdminLoginPage'; // Using existing admin login page for overall entry
@@ -49,55 +50,62 @@ function App() {
         
         {/* All CRM Routes are now Protected */}
         <Route path="/" element={
-          <ProtectedRoute requireAdmin={true}>
+          <ProtectedRoute requireAdmin={false}>
             <Layout activePage="dashboard" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><DashboardPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/leads" element={
-          <ProtectedRoute requireAdmin={true}>
+          <ProtectedRoute requireAdmin={false}>
             <Layout activePage="leads" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><LeadsPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/kanban" element={
-          <ProtectedRoute requireAdmin={true}>
+          <ProtectedRoute requireAdmin={false}>
             <Layout activePage="kanban" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><LeadsKanbanPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/meetings" element={
-          <ProtectedRoute requireAdmin={true}>
+          <ProtectedRoute requireAdmin={false}>
             <Layout activePage="meetings" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><MeetingsPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/todaytasks" element={
-          <ProtectedRoute requireAdmin={true}>
+          <ProtectedRoute requireAdmin={false}>
             <Layout activePage="todaytasks" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><TodayTasksPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/analytics" element={
-          <ProtectedRoute requireAdmin={true}>
+          <ProtectedRoute requireAdmin={false}>
             <Layout activePage="analytics" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><AnalyticsPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/whatsapp" element={
-          <ProtectedRoute requireAdmin={true}>
+          <ProtectedRoute requireAdmin={false}>
             <Layout activePage="whatsapp" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><WhatsAppPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/messages" element={
-          <ProtectedRoute requireAdmin={true}>
+          <ProtectedRoute requireAdmin={false}>
             <Layout activePage="messages" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><MessagesPage /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/settings" element={
-          <ProtectedRoute requireAdmin={true}>
+          <ProtectedRoute requireAdmin={false}>
             <Layout activePage="settings" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><SettingsPage /></Layout>
           </ProtectedRoute>
         } />
         
-        {/* Dedicated Admin Dashboard */}
+        {/* Dedicated Admin Dashboard — admin only */}
         <Route path="/admin" element={
           <ProtectedRoute requireAdmin={true}>
             <Layout activePage="admin" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><AdminDashboard /></Layout>
+          </ProtectedRoute>
+        } />
+
+        {/* Lead Pool — accessible by all authenticated users */}
+        <Route path="/pool" element={
+          <ProtectedRoute requireAdmin={false}>
+            <Layout activePage="pool" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><LeadPoolPage /></Layout>
           </ProtectedRoute>
         } />
 

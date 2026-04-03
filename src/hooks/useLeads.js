@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 
-export function useLeads(statusFilter = 'all') {
+export function useLeads(statusFilter = 'all', userId = null) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async () => {
     setLoading(true);
     setError('');
     let query = supabase
@@ -17,11 +17,14 @@ export function useLeads(statusFilter = 'all') {
     if (statusFilter && statusFilter !== 'all') {
       query = query.eq('status', statusFilter);
     }
+    if (userId) {
+      query = query.eq('assigned_user_id', userId);
+    }
     const { data, error: err } = await query;
     setLoading(false);
     if (err) { setError(err.message); return; }
     setLeads(data || []);
-  };
+  }, [statusFilter, userId]);
 
   useEffect(() => {
     fetchLeads();
@@ -33,8 +36,7 @@ export function useLeads(statusFilter = 'all') {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+  }, [fetchLeads]);
 
   return { leads, loading, error, refetch: fetchLeads };
 }

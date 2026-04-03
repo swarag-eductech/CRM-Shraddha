@@ -21,7 +21,9 @@ export default function MeetingsPage() {
     traineeLeadIds: [],
     leadIds: [],        // used only in edit mode (populated from existing meeting)
     meetingDatetime: '', 
-    meetingLink: '' 
+    meetingLink: '',
+    meetingType: 'orientation',
+    meetingProgram: 'ttp_teacher_training',
   });
   const [error, setError] = useState('');
   
@@ -29,6 +31,11 @@ export default function MeetingsPage() {
   const [addLeadsModal, setAddLeadsModal] = useState({ open: false, meetingId: null, selectedLeadIds: [] });
   // Modal for viewing leads
   const [viewLeadsModal, setViewLeadsModal] = useState({ open: false, leads: [] });
+  // Attendance modal
+  const [attendanceModal, setAttendanceModal] = useState({ open: false, meeting: null });
+  const [attendanceRows, setAttendanceRows] = useState([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceSaving, setAttendanceSaving] = useState(false);
   // Real-time tick (60s — matches cron cadence)
   const [tick, setTick] = useState(Date.now());
   const [editingMeeting, setEditingMeeting] = useState(null); // The meeting object being edited
@@ -101,11 +108,15 @@ export default function MeetingsPage() {
         meetingDatetime: form.meetingDatetime,
         meetingLink: form.meetingLink,
         hostEmail: hostLead?.email || null,
+        hostName: hostLead?.name || '',
+        hostPhone: hostLead?.phone || '',
         traineeEmails,
         userName: (firstTrainee || hostLead)?.name || 'Lead',
         userPhone: (firstTrainee || hostLead)?.phone || '',
+        meetingType: form.meetingType,
+        meetingProgram: form.meetingProgram,
       });
-      setForm({ hostLeadId: '', traineeLeadIds: [], leadIds: [], meetingDatetime: '', meetingLink: '' });
+      setForm({ hostLeadId: '', traineeLeadIds: [], leadIds: [], meetingDatetime: '', meetingLink: '', meetingType: 'orientation', meetingProgram: 'ttp_teacher_training' });
       setShowForm(false);
       fetchAll();
     } catch (err) {
@@ -174,6 +185,30 @@ export default function MeetingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openAttendance = async (meeting) => {
+    setAttendanceModal({ open: true, meeting });
+    setAttendanceLoading(true);
+    setAttendanceRows([]);
+    const { data, error } = await supabase
+      .from('meeting_attendance')
+      .select('*')
+      .eq('meeting_id', meeting.id)
+      .order('user_name');
+    setAttendanceLoading(false);
+    if (!error) setAttendanceRows(data || []);
+  };
+
+  const saveAttendance = async () => {
+    setAttendanceSaving(true);
+    for (const row of attendanceRows) {
+      await supabase
+        .from('meeting_attendance')
+        .update({ status: row.status, marked_at: row.status === 'present' ? new Date().toISOString() : null })
+        .eq('id', row.id);
+    }
+    setAttendanceSaving(false);
   };
 
   const getMeetingStatus = (dt, _tick) => {
@@ -249,6 +284,32 @@ export default function MeetingsPage() {
                 ) : (
                   /* ── NEW MEETING MODE: Host + Trainees ── */
                   <>
+                    <div className="form-group">
+                      <label>Meeting Type *</label>
+                      <select
+                        className="form-input"
+                        value={form.meetingType}
+                        onChange={(e) => setForm(f => ({ ...f, meetingType: e.target.value }))}
+                        required
+                      >
+                        <option value="orientation">👋 Orientation Training</option>
+                        <option value="marketing">📈 Marketing Session</option>
+                        <option value="doubt">❓ Doubt Clearing</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Training Program *</label>
+                      <select
+                        className="form-input"
+                        value={form.meetingProgram}
+                        onChange={(e) => setForm(f => ({ ...f, meetingProgram: e.target.value }))}
+                        required
+                      >
+                        <option value="ttp_teacher_training">🎓 TTP Teacher Training</option>
+                        <option value="abacus">🧮 Abacus Teacher Training</option>
+                        <option value="vedic_math">📐 Vedic Math Teacher Training</option>
+                      </select>
+                    </div>
                     <div className="form-group">
                       <label>Organizing Host *</label>
                       <select
@@ -343,7 +404,7 @@ export default function MeetingsPage() {
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   <MdEvent /> {saving ? 'Saving…' : (editingMeeting ? 'Update Meeting' : 'Schedule Meeting')}
                 </button>
-                <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setEditingMeeting(null); setForm({ hostLeadId: '', traineeLeadIds: [], leadIds: [], meetingDatetime: '', meetingLink: '' }); }}>
+                <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setEditingMeeting(null); setForm({ hostLeadId: '', traineeLeadIds: [], leadIds: [], meetingDatetime: '', meetingLink: '', meetingType: 'orientation', meetingProgram: 'ttp_teacher_training' }); }}>
                   Cancel
                 </button>
               </div>
@@ -468,6 +529,13 @@ export default function MeetingsPage() {
                     >
                       View Leads
                     </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => openAttendance(m)}
+                      title="View Attendance"
+                    >
+                      📋 Attendance
+                    </button>
                     <button 
                       className="btn btn-secondary btn-sm"
                       onClick={() => setAddLeadsModal({ open: true, meetingId: m.id, selectedLeadIds: [] })}
@@ -566,6 +634,13 @@ export default function MeetingsPage() {
                     </div>
                   </div>
                   <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => openAttendance(m)}
+                    style={{ fontSize: 11, padding: '3px 8px' }}
+                  >
+                    📋
+                  </button>
+                  <button
                     className="btn btn-danger btn-icon btn-sm"
                     onClick={() => handleDelete(m.id)}
                     title="Delete"
@@ -630,6 +705,120 @@ export default function MeetingsPage() {
                 <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Adding...' : 'Add Leads'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── ATTENDANCE MODAL ── */}
+      {attendanceModal.open && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 600, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+            {/* Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>📋 Attendance Sheet</h3>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                  {attendanceModal.meeting?.meeting_topic || 'Meeting'}
+                  {' · '}
+                  {attendanceModal.meeting?.meeting_datetime
+                    ? new Date(attendanceModal.meeting.meeting_datetime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+                    : ''}
+                </div>
+              </div>
+              <button onClick={() => setAttendanceModal({ open: false, meeting: null })} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>✕</button>
+            </div>
+
+            {/* Summary badges */}
+            {!attendanceLoading && attendanceRows.length > 0 && (() => {
+              const present = attendanceRows.filter(r => r.status === 'present').length;
+              const absent  = attendanceRows.filter(r => r.status === 'absent').length;
+              const total   = attendanceRows.length;
+              const pct     = total > 0 ? Math.round((present / total) * 100) : 0;
+              return (
+                <div style={{ display: 'flex', gap: 12, padding: '16px 24px', borderBottom: '1px solid #f3f4f6', flexWrap: 'wrap' }}>
+                  {[
+                    { label: 'Total',   value: total,     color: '#3b82f6' },
+                    { label: 'Present', value: present,   color: '#16a34a' },
+                    { label: 'Absent',  value: absent,    color: '#dc2626' },
+                    { label: 'Att. %',  value: `${pct}%`, color: pct >= 75 ? '#16a34a' : pct >= 50 ? '#f59e0b' : '#dc2626' },
+                  ].map(s => (
+                    <div key={s.label} style={{ flex: 1, minWidth: 70, textAlign: 'center', background: '#f8fafc', borderRadius: 10, padding: '10px 8px' }}>
+                      <div style={{ fontWeight: 800, fontSize: 22, color: s.color }}>{s.value}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Table */}
+            <div style={{ overflowY: 'auto', flex: 1, padding: '0 24px' }}>
+              {attendanceLoading ? (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
+              ) : attendanceRows.length === 0 ? (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <p style={{ fontSize: 32, margin: 0 }}>📭</p>
+                  <p style={{ marginTop: 8 }}>No attendance records for this meeting yet.</p>
+                  <p style={{ fontSize: 12 }}>Records are seeded when a meeting is created via the Admin Meeting Scheduler.</p>
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 4 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #f3f4f6' }}>
+                      <th style={{ textAlign: 'left', padding: '10px 8px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>#</th>
+                      <th style={{ textAlign: 'left', padding: '10px 8px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>Name</th>
+                      <th style={{ textAlign: 'left', padding: '10px 8px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>Email</th>
+                      <th style={{ textAlign: 'center', padding: '10px 8px', fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attendanceRows.map((r, i) => (
+                      <tr key={r.id} style={{ borderBottom: '1px solid #f9f0e8' }}>
+                        <td style={{ padding: '10px 8px', fontSize: 12, color: 'var(--text-muted)' }}>{i + 1}</td>
+                        <td style={{ padding: '10px 8px', fontWeight: 700, fontSize: 13 }}>{r.user_name}</td>
+                        <td style={{ padding: '10px 8px', fontSize: 12, color: '#2563eb' }}>{r.user_email || '—'}</td>
+                        <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={r.status === 'present'}
+                              onChange={() => setAttendanceRows(prev =>
+                                prev.map(row => row.id === r.id
+                                  ? { ...row, status: row.status === 'present' ? 'absent' : 'present' }
+                                  : row
+                                )
+                              )}
+                            />
+                            <span style={{
+                              fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 10,
+                              background: r.status === 'present' ? '#f0fdf4' : '#fef2f2',
+                              color:      r.status === 'present' ? '#16a34a' : '#dc2626',
+                            }}>
+                              {r.status === 'present' ? '✅ Present' : '❌ Absent'}
+                            </span>
+                          </label>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Footer */}
+            {!attendanceLoading && attendanceRows.length > 0 && (
+              <div style={{ padding: '16px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button className="btn btn-secondary" onClick={() => setAttendanceModal({ open: false, meeting: null })}>Close</button>
+                <button className="btn btn-primary" onClick={saveAttendance} disabled={attendanceSaving}>
+                  {attendanceSaving ? 'Saving…' : '💾 Save Attendance'}
+                </button>
+              </div>
+            )}
+            {!attendanceLoading && attendanceRows.length === 0 && (
+              <div style={{ padding: '16px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end' }}>
+                <button className="btn btn-secondary" onClick={() => setAttendanceModal({ open: false, meeting: null })}>Close</button>
+              </div>
+            )}
           </div>
         </div>
       )}
