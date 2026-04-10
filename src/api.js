@@ -575,3 +575,16 @@ export async function updateSettings(settings) {
   return data;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SMARTFLO CLICK-TO-CALL
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function callCustomer(phone) {
+  const { data, error } = await supabase.functions.invoke('click-to-call', {
+    body: { phone },
+  });
+  if (error) throw error;
+  if (data && !data.success) throw new Error(data.error || 'Call failed');
+  return data;
+}
+

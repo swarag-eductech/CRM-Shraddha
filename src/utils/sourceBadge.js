@@ -1,16 +1,19 @@
 import React from 'react';
 
 export const SOURCE_CONFIG = {
-  landing_page: { label: '🌐 Landing',   bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  website:      { label: '💻 Website',   bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
-  intrakt:      { label: '💬 WhatsApp',  bg: '#fdf4ff', color: '#7c3aed', border: '#e9d5ff' },
-  whatsapp:     { label: '💬 WhatsApp',  bg: '#fdf4ff', color: '#7c3aed', border: '#e9d5ff' },
-  manual:       { label: '✏️ Manual',    bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
+  landing_page:      { label: '🌐 Landing',        bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
+  website:           { label: '💻 Website',         bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+  intrakt:           { label: '💬 WhatsApp',        bg: '#fdf4ff', color: '#7c3aed', border: '#e9d5ff' },
+  whatsapp:          { label: '💬 WhatsApp',        bg: '#fdf4ff', color: '#7c3aed', border: '#e9d5ff' },
+  manual:            { label: '✏️ Manual',          bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
+  boosted_campaign:  { label: '📢 Boosted',         bg: '#fef9c3', color: '#854d0e', border: '#fde68a' },
+  meeting_booking:   { label: '📅 Meeting',         bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
 };
 
 export const PROGRAM_CONFIG = {
-  ttp_teacher_training: { label: '👩‍🏫 TTP Teacher', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
-  student_abacus_class: { label: '🧮 Abacus Student', bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
+  ttp_teacher_training:  { label: '👩‍🏫 TTP Training',   bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+  student_abacus_class:  { label: '🧮 Abacus',         bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
+  student_vedic_math:    { label: '🔢 Vedic Math',     bg: '#fdf4ff', color: '#7c3aed', border: '#e9d5ff' },
 };
 
 export function ProgramBadge({ program }) {

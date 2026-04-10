@@ -11,9 +11,10 @@ export function useLeads(statusFilter = 'all', userId = null) {
     setError('');
     let query = supabase
       .from('ttp_leads')
-      .select('*, ttp_followups(id, followup_number, next_followup_at, status, note, dismissed, is_deleted)')
+      .select('id, name, phone, email, city, source, lead_program, status, assigned_user_id, created_at')
       .eq('is_deleted', false)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(300);
     if (statusFilter && statusFilter !== 'all') {
       query = query.eq('status', statusFilter);
     }

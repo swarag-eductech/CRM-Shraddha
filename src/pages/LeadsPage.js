@@ -2,10 +2,39 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MdSearch, MdAdd, MdClose, MdRefresh, MdPhone, MdCalendarToday, MdExpandMore, MdExpandLess, MdDelete } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
-import { createLead, updateLeadStatus, addFollowup, softDeleteLead } from '../api';
+import { createLead, updateLeadStatus, addFollowup, softDeleteLead, callCustomer } from '../api';
 import { formatIST } from '../utils/time';
 import { SourceBadge, ProgramBadge } from '../utils/sourceBadge';
 import { useAuth } from '../hooks/useAuth';
+
+function SmartfloCallButton({ phone }) {
+  const [calling, setCalling] = useState(false);
+
+  const handleCall = async () => {
+    if (calling) return;
+    setCalling(true);
+    try {
+      await callCustomer(phone);
+      alert(`📞 Calling ${phone}...\nSmartflo will call the customer first, then connect you.`);
+    } catch (err) {
+      alert('Call failed: ' + err.message);
+    } finally {
+      setCalling(false);
+    }
+  };
+
+  return (
+    <button
+      className="btn btn-sm"
+      title="Call via Smartflo"
+      onClick={handleCall}
+      disabled={calling}
+      style={{ background: calling ? '#f0f9f0' : '#e8f5e9', color: '#2e7d32', border: '1.5px solid #a5d6a7', padding: '4px 8px', cursor: calling ? 'wait' : 'pointer' }}
+    >
+      <MdPhone size={14} />
+    </button>
+  );
+}
 
 const STATUS_OPTIONS = ['new', 'contacted', 'warm', 'converted', 'lost'];
 const STATUS_COLORS = {
@@ -165,7 +194,7 @@ function FollowupModal({ lead, onClose }) {
 }
 
 function AddLeadModal({ onClose, onAdd }) {
-  const [form, setForm] = useState({ name: '', phone: '', email: '', city: '', source: 'manual', lead_program: 'student_abacus_class' });
+  const [form, setForm] = useState({ name: '', phone: '', email: '', city: '', source: 'manual', lead_program: 'student_abacus_class', campaign: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -207,6 +236,7 @@ function AddLeadModal({ onClose, onAdd }) {
               <label>Source</label>
               <select className="form-input" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
                 <option value="manual">✏️ Manual</option>
+                <option value="boosted_campaign">📢 Boosted Campaign</option>
                 <option value="landing_page">🌐 Landing Page</option>
                 <option value="website">💻 Website</option>
                 <option value="intrakt">💬 WhatsApp</option>
@@ -215,7 +245,8 @@ function AddLeadModal({ onClose, onAdd }) {
             <div className="form-group">
               <label>Program</label>
               <select className="form-input" value={form.lead_program} onChange={e => setForm(f => ({ ...f, lead_program: e.target.value }))}>
-                <option value="student_abacus_class">🧮 Abacus Student Class</option>
+                <option value="student_abacus_class">🧮 Abacus Student</option>
+                <option value="student_vedic_math">🔢 Vedic Math Student</option>
                 <option value="ttp_teacher_training">👩‍🏫 TTP Teacher Training</option>
               </select>
             </div>
@@ -246,9 +277,10 @@ export default function LeadsPage() {
     setLoading(true); setError('');
     let query = supabase
       .from('ttp_leads')
-      .select('*, ttp_followups(id, followup_number, next_followup_at, status, reminder_sent, dismissed, is_deleted)')
+      .select('id, name, phone, email, city, source, lead_program, status, assigned_user_id, created_at, ttp_followups(id, followup_number, reminder_sent)')
       .eq('is_deleted', false)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(300);
     if (!isAdmin && userId) {
       query = query.eq('assigned_user_id', userId);
     }
@@ -297,7 +329,7 @@ export default function LeadsPage() {
       {/* Program filter */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginRight: 2 }}>PROGRAM:</span>
-        {[{ key: 'all', label: 'All Programs' }, { key: 'student_abacus_class', label: '🧮 Abacus Students' }, { key: 'ttp_teacher_training', label: '👩‍🏫 TTP Teachers' }].map(({ key, label }) => {
+        {[{ key: 'all', label: 'All Programs' }, { key: 'student_abacus_class', label: '🧮 Abacus' }, { key: 'student_vedic_math', label: '🔢 Vedic Math' }, { key: 'ttp_teacher_training', label: '👩‍🏫 TTP Training' }].map(({ key, label }) => {
           const active = programFilter === key;
           const cnt = key === 'all' ? leads.length : leads.filter(l => l.lead_program === key).length;
           return (
@@ -447,6 +479,9 @@ export default function LeadsPage() {
                               onClick={() => { window.location.href = `/whatsapp?name=${encodeURIComponent(lead.name)}&phone=${encodeURIComponent(lead.phone)}&template=0`; }}>
                               <FaWhatsapp />
                             </button>
+                          )}
+                          {lead.phone && (
+                            <SmartfloCallButton phone={lead.phone} />
                           )}
                           <button
                             className="btn btn-sm"
