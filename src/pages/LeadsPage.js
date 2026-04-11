@@ -406,7 +406,8 @@ export default function LeadsPage() {
           </div>
         )}
 
-        <div className="table-wrapper">
+        {/* ── Desktop table ── */}
+        <div className="table-wrapper leads-table-view">
           {loading ? (
             <div style={{ padding: '24px 0' }}>
               {[1,2,3,4,5].map(i => (
@@ -472,24 +473,29 @@ export default function LeadsPage() {
                         ); })()}
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-secondary btn-sm" onClick={() => setFollowupLead(lead)}>+ Follow-up</button>
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'nowrap', alignItems: 'center' }}>
+                          <button
+                            className="btn btn-sm"
+                            title="Add Follow-up"
+                            onClick={() => setFollowupLead(lead)}
+                            style={{ background: '#fff7ed', color: '#ea580c', border: '1.5px solid #fed7aa', padding: '5px 8px' }}
+                          >
+                            <MdCalendarToday size={15} />
+                          </button>
                           {lead.phone && (
-                            <button className="btn btn-whatsapp btn-sm" title="WhatsApp"
+                            <button className="btn btn-whatsapp btn-sm" title="WhatsApp" style={{ padding: '5px 8px' }}
                               onClick={() => { window.location.href = `/whatsapp?name=${encodeURIComponent(lead.name)}&phone=${encodeURIComponent(lead.phone)}&template=0`; }}>
-                              <FaWhatsapp />
+                              <FaWhatsapp size={15} />
                             </button>
                           )}
-                          {lead.phone && (
-                            <SmartfloCallButton phone={lead.phone} />
-                          )}
+                          {lead.phone && <SmartfloCallButton phone={lead.phone} />}
                           <button
                             className="btn btn-sm"
                             title="Delete Lead"
                             onClick={() => handleDeleteLead(lead.id, lead.name)}
-                            style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', padding: '4px 8px' }}
+                            style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', padding: '5px 8px' }}
                           >
-                            <MdDelete />
+                            <MdDelete size={15} />
                           </button>
                         </div>
                       </td>
@@ -498,6 +504,84 @@ export default function LeadsPage() {
                 })}
               </tbody>
             </table>
+          )}
+        </div>
+
+        {/* ── Mobile cards ── */}
+        <div className="leads-mobile-cards">
+          {loading ? (
+            [1,2,3,4].map(i => (
+              <div key={i} className="skeleton" style={{ height: 110, borderRadius: 12 }} />
+            ))
+          ) : filtered.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">{leads.length === 0 ? '📋' : '🔍'}</div>
+              <p>{leads.length === 0 ? 'No leads yet. Add your first lead!' : 'No leads match the current filter.'}</p>
+            </div>
+          ) : (
+            filtered.map((lead, i) => {
+              const followupCount = lead.ttp_followups?.length || 0;
+              const hasPending = lead.ttp_followups?.some(f => !f.reminder_sent);
+              const { shortDT } = formatIST(lead.created_at);
+              return (
+                <div key={lead.id} className="lead-mobile-card">
+                  {/* Card header */}
+                  <div className="lead-card-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 15, fontWeight: 700, flexShrink: 0 }}>
+                        {(lead.name || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.name || '—'}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{lead.phone || '—'}</div>
+                      </div>
+                    </div>
+                    <StatusBadge status={lead.status || 'new'} leadId={lead.id} onUpdated={handleStatusUpdate} />
+                  </div>
+
+                  {/* Card meta row */}
+                  <div className="lead-card-meta">
+                    {lead.city && <span className="lead-card-meta-pill">📍 {lead.city}</span>}
+                    <ProgramBadge program={lead.lead_program} />
+                    <SourceBadge source={lead.source} />
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>{shortDT}</span>
+                  </div>
+
+                  {/* Card actions */}
+                  <div className="lead-card-actions">
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ flex: 1, justifyContent: 'center' }}
+                      onClick={() => setFollowupLead(lead)}
+                    >
+                      <MdCalendarToday size={13} />
+                      <span>Follow-up</span>
+                      <span style={{ background: followupCount > 0 ? '#fed7aa' : '#e5e7eb', color: followupCount > 0 ? '#ea580c' : 'var(--text-muted)', borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
+                        {followupCount}/3{hasPending && ' •'}
+                      </span>
+                    </button>
+                    {lead.phone && (
+                      <button
+                        className="btn btn-whatsapp btn-sm"
+                        title="WhatsApp"
+                        onClick={() => { window.location.href = `/whatsapp?name=${encodeURIComponent(lead.name)}&phone=${encodeURIComponent(lead.phone)}&template=0`; }}
+                      >
+                        <FaWhatsapp size={16} />
+                      </button>
+                    )}
+                    {lead.phone && <SmartfloCallButton phone={lead.phone} />}
+                    <button
+                      className="btn btn-sm"
+                      title="Delete Lead"
+                      onClick={() => handleDeleteLead(lead.id, lead.name)}
+                      style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', padding: '6px 10px' }}
+                    >
+                      <MdDelete size={16} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </div>
