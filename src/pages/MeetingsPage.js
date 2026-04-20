@@ -295,6 +295,7 @@ export default function MeetingsPage() {
                         <option value="orientation">👋 Orientation Training</option>
                         <option value="marketing">📈 Marketing Session</option>
                         <option value="doubt">❓ Doubt Clearing</option>
+                        <option value="workshop">🏫 Workshop</option>
                       </select>
                     </div>
                     <div className="form-group">

@@ -228,6 +228,7 @@ function templateNameForType(meetingType: string): string {
     orientation:       "meeting_orientation_v2",
     marketing:         "meeting_marketing_v2",
     doubt:             "meeting_doubt_v2",
+    workshop:          "crm_workshop_confirmation",
     host_notification: "meeting_host_notification",
   };
   return map[meetingType] || "wron_successful";
@@ -557,7 +558,7 @@ serve(async (req: Request) => {
       : traineeEmails.filter(Boolean).join(', ');
 
     const meetingTypeLabel: Record<string, string> = {
-      orientation: 'Orientation', marketing: 'Marketing', doubt: 'Doubt Clearing',
+      orientation: 'Orientation', marketing: 'Marketing', doubt: 'Doubt Clearing', workshop: 'Workshop',
     };
     const programLabel: Record<string, string> = {
       ttp_teacher_training: 'TTP Teacher Training', abacus: 'Abacus', vedic_math: 'Vedic Math',
