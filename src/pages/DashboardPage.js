@@ -52,17 +52,19 @@ export default function DashboardPage() {
   const { userId, isAdmin } = useAuth();
   const { leads, loading, refetch } = useLeads('all', isAdmin ? null : userId || null);
   const { followups: todayFollowups, meetings: todayMeetings } = useTodayTasks();
-  const today = new Date();
 
   const totalLeads = leads.length;
 
-  const todayLeads = useMemo(() => leads.filter(l => {
-    if (!l.created_at) return false;
-    const ld = new Date(l.created_at);
-    return ld.getDate() === today.getDate() &&
-      ld.getMonth() === today.getMonth() &&
-      ld.getFullYear() === today.getFullYear();
-  }).length, [leads, today]);
+  const todayLeads = useMemo(() => {
+    const today = new Date();
+    return leads.filter(l => {
+      if (!l.created_at) return false;
+      const ld = new Date(l.created_at);
+      return ld.getDate() === today.getDate() &&
+        ld.getMonth() === today.getMonth() &&
+        ld.getFullYear() === today.getFullYear();
+    }).length;
+  }, [leads]);
 
   const thisWeekLeads = useMemo(() => {
     const weekAgo = new Date();
