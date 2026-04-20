@@ -47,43 +47,6 @@ function getWeekData(leads) {
   return counts.map(c => ({ ...c, height: `${Math.max((c.leads / max) * 100, 4)}%` }));
 }
 
-const _statCards = [
-  {
-    label: 'Total Leads',
-    value: '1,284',
-    icon: <MdPeople />,
-    color: 'linear-gradient(135deg, #ff6600, #f7971e)',
-    change: '+12% this month',
-    changeType: 'up',
-  },
-  {
-    label: "Today's Leads",
-    value: '24',
-    icon: <MdTrendingUp />,
-    color: 'linear-gradient(135deg, #7c3aed, #a855f7)',
-    change: '+5 since yesterday',
-    changeType: 'up',
-  },
-  {
-    label: 'Upcoming Meetings',
-    value: '8',
-    icon: <MdEvent />,
-    color: 'linear-gradient(135deg, #2563eb, #3b82f6)',
-    change: '3 today',
-    changeType: 'up',
-  },
-  {
-    label: 'Converted Leads',
-    value: '342',
-    icon: <MdCheckCircle />,
-    color: 'linear-gradient(135deg, #10b981, #34d399)',
-    change: '26.6% conversion rate',
-    changeType: 'up',
-  },
-];
-
-
-
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { userId, isAdmin } = useAuth();
@@ -99,7 +62,7 @@ export default function DashboardPage() {
     return ld.getDate() === today.getDate() &&
       ld.getMonth() === today.getMonth() &&
       ld.getFullYear() === today.getFullYear();
-  }).length, [leads]);
+  }).length, [leads, today]);
 
   const thisWeekLeads = useMemo(() => {
     const weekAgo = new Date();
@@ -128,7 +91,7 @@ export default function DashboardPage() {
       { label: 'With Email', value: withEmail, pct: totalLeads ? Math.round((withEmail / totalLeads) * 100) : 0 },
       { label: 'With Message / Note', value: withMsg, pct: totalLeads ? Math.round((withMsg / totalLeads) * 100) : 0 },
     ];
-  }, [leads]);
+  }, [leads, totalLeads, withEmail]);
 
   const statCards = [
     {

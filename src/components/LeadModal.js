@@ -6,11 +6,6 @@ import { addFollowup, updateLeadStatus, softDeleteFollowup, dismissFollowup, get
 import { formatIST } from '../utils/time';
 import { SourceBadge } from '../utils/sourceBadge';
 
-function formatDT(dt) {
-  if (!dt) return null;
-  return formatIST(dt).shortDT;
-}
-
 export default function LeadModal({ lead, onClose, onUpdated }) {
   const [followups, setFollowups] = useState([]);
   const [loadingF, setLoadingF] = useState(true);

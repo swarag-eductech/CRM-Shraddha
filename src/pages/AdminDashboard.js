@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { MdEvent, MdPeople, MdSchool, MdRefresh, MdBarChart, MdAssignment, MdCheckCircle, MdCancel } from 'react-icons/md';
+import { MdRefresh } from 'react-icons/md';
 import { SourceBadge, ProgramBadge } from '../utils/sourceBadge';
 import { getCRMUsers, getLeadsForAdmin, updateCRMUserRole, reassignLead, createCRMUser } from '../api';
 import { useAuth } from '../hooks/useAuth';

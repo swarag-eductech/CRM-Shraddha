@@ -5,11 +5,6 @@ import { useTodayTasks } from '../hooks/useTodayTasks';
 import { dismissFollowup } from '../api';
 import { formatIST } from '../utils/time';
 
-function formatTime(dt) {
-  if (!dt) return '—';
-  return formatIST(dt).timeOnly;
-}
-
 export default function TodayTasksPage() {
   const { followups: rawFollowups, meetings, loading, refetch: refresh } = useTodayTasks();
   const [dismissed, setDismissed] = useState(new Set());

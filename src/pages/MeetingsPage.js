@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MdEvent, MdAdd, MdClose, MdVideocam, MdDelete, MdRefresh, MdPhone } from 'react-icons/md';
-import { FaWhatsapp } from 'react-icons/fa';
+import { MdEvent, MdAdd, MdClose, MdVideocam, MdDelete, MdRefresh } from 'react-icons/md';
 import { supabase } from '../supabaseClient';
 import { scheduleMeeting, deleteMeeting as deleteMeetingApi, addLeadsToMeeting, updateMeeting } from '../api';
 import { formatIST } from '../utils/time';

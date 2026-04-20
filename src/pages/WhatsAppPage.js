@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaWhatsapp, FaSearch, FaUserCircle } from 'react-icons/fa';
+import { FaWhatsapp } from 'react-icons/fa';
 import { useLeads } from '../hooks/useLeads';
 import { useSearchParams } from 'react-router-dom';
 
