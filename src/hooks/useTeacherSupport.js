@@ -41,7 +41,7 @@ export function useTeacherSupport({ issueTypeFilter = 'all', statusFilter = 'all
       return;
     }
     setIssues(data || []);
-  }, [issueTypeFilter, statusFilter, myIssues, currentUserId]);
+  }, [issueTypeFilter, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchIssues();

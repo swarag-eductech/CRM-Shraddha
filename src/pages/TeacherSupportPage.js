@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
-  MdAdd, MdClose, MdRefresh, MdSearch, MdPerson, MdPhone,
-  MdBusiness, MdAssignment, MdCalendarToday, MdFilterList,
+  MdAdd, MdClose, MdRefresh, MdSearch, MdPhone,
+  MdAssignment, MdFilterList,
   MdEdit, MdDelete, MdSupportAgent, MdCheckCircle, MdPending,
-  MdOutlineContactPhone, MdPeople,
+  MdOutlineContactPhone,
 } from 'react-icons/md';
 import { useTeacherSupport } from '../hooks/useTeacherSupport';
 import { useAuth } from '../hooks/useAuth';
@@ -25,11 +25,7 @@ const STATUS_COLORS = {
   'Resolved':    { bg: '#f1f5f9', color: '#64748b', border: '#e2e8f0' },
 };
 
-const DEPT_COLORS = {
-  'Marketing Team':  { bg: '#fff7ed', color: '#ea580c' },
-  'Admin Team':      { bg: '#eff6ff', color: '#2563eb' },
-  'Support/HR Team': { bg: '#fdf4ff', color: '#9333ea' },
-};
+
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatDate(dateStr) {
@@ -280,7 +276,7 @@ function IssueRow({ issue, onEdit, onDelete, onStatusChange }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TeacherSupportPage() {
-  const { userId, isAdmin } = useAuth();
+  const { userId } = useAuth();
 
   const [issueTypeFilter, setIssueTypeFilter] = useState('all');
   const [statusFilter,    setStatusFilter]    = useState('all');
