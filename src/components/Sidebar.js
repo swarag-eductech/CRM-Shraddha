@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   MdDashboard, MdPeople, MdEvent, MdMessage, MdSettings,
-  MdLogout, MdSchool, MdToday, MdApps, MdInsertChart, MdPool
+  MdLogout, MdSchool, MdToday, MdApps, MdInsertChart, MdPool, MdSupportAgent
 } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
@@ -16,6 +16,7 @@ const navItems = [
   { id: 'meetings',   label: 'Meetings',      icon: <MdEvent />,      path: '/meetings' },
   { id: 'todaytasks', label: "Today's Tasks", icon: <MdToday />,      path: '/todaytasks' },
   { id: 'analytics', label: 'Analytics',     icon: <MdInsertChart />, path: '/analytics' },
+  { id: 'teacher-support', label: 'Teacher Support', icon: <MdSupportAgent />, path: '/teacher-support' },
   { id: 'whatsapp',   label: 'WhatsApp',      icon: <FaWhatsapp />,   path: '/whatsapp' },
   { id: 'messages',   label: 'Messages',      icon: <MdMessage />,    path: '/messages' },
 ];

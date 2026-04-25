@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MdPeople, MdTrendingUp, MdEvent, MdCheckCircle, MdArrowForward, MdRefresh, MdToday, MdApps } from 'react-icons/md';
+import { MdPeople, MdTrendingUp, MdEvent, MdCheckCircle, MdArrowForward, MdRefresh, MdToday, MdApps, MdSupportAgent } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { useLeads } from '../hooks/useLeads';
 import { useTodayTasks } from '../hooks/useTodayTasks';
+import { useTeacherSupport } from '../hooks/useTeacherSupport';
 import FollowupPopup from '../components/FollowupPopup';
 import { useAuth } from '../hooks/useAuth';
 
@@ -52,6 +53,7 @@ export default function DashboardPage() {
   const { userId, isAdmin } = useAuth();
   const { leads, loading, refetch } = useLeads('all', isAdmin ? null : userId || null);
   const { followups: todayFollowups, meetings: todayMeetings } = useTodayTasks();
+  const { issues: tsIssues } = useTeacherSupport();
 
   const totalLeads = leads.length;
 
@@ -157,6 +159,26 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Teacher Support Summary */}
+      {tsIssues.length > 0 && (
+        <div style={{ background: '#fff', borderRadius: 14, padding: '16px 20px', marginBottom: 20, border: '1.5px solid #f0e8de', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+            <MdSupportAgent style={{ color: '#ff6600', fontSize: 22, flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#1e293b' }}>Teacher Support Desk</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                <span style={{ color: '#ff6600', fontWeight: 700 }}>{tsIssues.filter(i => i.status !== 'Resolved').length}</span> open &nbsp;·&nbsp;
+                <span style={{ color: '#ea580c', fontWeight: 700 }}>{tsIssues.filter(i => i.issue_type === 'Marketing Issue').length}</span> marketing &nbsp;·&nbsp;
+                <span style={{ color: '#16a34a', fontWeight: 700 }}>{tsIssues.filter(i => i.status === 'Resolved').length}</span> resolved
+              </div>
+            </div>
+          </div>
+          <button onClick={() => navigate('/teacher-support')} style={{ padding: '7px 16px', borderRadius: 8, background: 'linear-gradient(135deg,#ff6600,#f97316)', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            View All <MdArrowForward size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Main Grid */}
       <div className="dashboard-grid">
@@ -316,6 +338,10 @@ export default function DashboardPage() {
               <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}
                 onClick={() => navigate('/todaytasks')}>
                 <MdToday /> Today's Tasks
+              </button>
+              <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}
+                onClick={() => navigate('/teacher-support')}>
+                <MdSupportAgent /> Teacher Support
               </button>
               <button className="btn btn-whatsapp" style={{ width: '100%', justifyContent: 'center' }}
                 onClick={() => navigate('/whatsapp')}>

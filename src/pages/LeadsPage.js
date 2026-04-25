@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MdSearch, MdAdd, MdClose, MdRefresh, MdPhone, MdCalendarToday, MdExpandMore, MdExpandLess, MdDelete } from 'react-icons/md';
+import { MdSearch, MdAdd, MdClose, MdRefresh, MdPhone, MdCalendarToday, MdExpandMore, MdExpandLess, MdDelete, MdAssignment, MdCheckBox, MdCheckBoxOutlineBlank, MdIndeterminateCheckBox } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
 import { createLead, updateLeadStatus, addFollowup, softDeleteLead, callCustomer } from '../api';
@@ -7,15 +7,27 @@ import { formatIST } from '../utils/time';
 import { SourceBadge, ProgramBadge } from '../utils/sourceBadge';
 import { useAuth } from '../hooks/useAuth';
 
+const AGENTS = ['pujita', 'aditya', 'gautami'];
+
 function SmartfloCallButton({ phone }) {
-  const [calling, setCalling] = useState(false);
+  const [calling, setCalling]       = useState(false);
+  const [agent, setAgent]           = useState('');
+  const [dropOpen, setDropOpen]     = useState(false);
+  const ref = useRef();
+
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setDropOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
 
   const handleCall = async () => {
     if (calling) return;
+    if (!agent) { alert('Please select an agent first.'); setDropOpen(true); return; }
     setCalling(true);
     try {
-      await callCustomer(phone);
-      alert(`📞 Calling ${phone}...\nSmartflo will call the customer first, then connect you.`);
+      await callCustomer(phone, agent);
+      alert(`📞 Calling ${phone} via ${agent}...\nSmartflo will call you first, then connect to the customer.`);
     } catch (err) {
       alert('Call failed: ' + err.message);
     } finally {
@@ -24,15 +36,35 @@ function SmartfloCallButton({ phone }) {
   };
 
   return (
-    <button
-      className="btn btn-sm"
-      title="Call via Smartflo"
-      onClick={handleCall}
-      disabled={calling}
-      style={{ background: calling ? '#f0f9f0' : '#e8f5e9', color: '#2e7d32', border: '1.5px solid #a5d6a7', padding: '4px 8px', cursor: calling ? 'wait' : 'pointer' }}
-    >
-      <MdPhone size={14} />
-    </button>
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex', gap: 2 }}>
+      {/* Agent selector */}
+      <button
+        onClick={() => setDropOpen(o => !o)}
+        title="Select agent"
+        style={{ background: '#e8f5e9', color: '#2e7d32', border: '1.5px solid #a5d6a7', borderRight: 'none', borderRadius: '6px 0 0 6px', padding: '4px 6px', cursor: 'pointer', fontSize: 11, fontWeight: 700, minWidth: 58 }}
+      >
+        {agent ? agent.charAt(0).toUpperCase() + agent.slice(1) : '▾ Agent'}
+      </button>
+      {dropOpen && (
+        <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 100, background: '#fff', border: '1.5px solid #a5d6a7', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', overflow: 'hidden', minWidth: 100 }}>
+          {AGENTS.map(a => (
+            <div key={a} onClick={() => { setAgent(a); setDropOpen(false); }}
+              style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: agent === a ? '#16a34a' : '#334155', background: agent === a ? '#f0fdf4' : '#fff' }}>
+              {a.charAt(0).toUpperCase() + a.slice(1)}
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Call button */}
+      <button
+        title={agent ? `Call via ${agent}` : 'Select agent first'}
+        onClick={handleCall}
+        disabled={calling}
+        style={{ background: calling ? '#f0f9f0' : '#e8f5e9', color: '#2e7d32', border: '1.5px solid #a5d6a7', borderLeft: 'none', borderRadius: '0 6px 6px 0', padding: '4px 6px', cursor: calling ? 'wait' : 'pointer' }}
+      >
+        <MdPhone size={14} />
+      </button>
+    </div>
   );
 }
 
@@ -193,6 +225,297 @@ function FollowupModal({ lead, onClose }) {
   );
 }
 
+function LeadReportModal({ lead, onClose }) {
+  const [followups, setFollowups] = useState([]);
+  const [loadingF, setLoadingF] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('ttp_followups')
+        .select('*')
+        .eq('lead_id', lead.id)
+        .order('followup_number', { ascending: true });
+      setFollowups(data || []);
+      setLoadingF(false);
+    })();
+  }, [lead.id]);
+
+  const fmtDT = (dt) => dt
+    ? new Date(dt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '—';
+
+  const PROGRAM_LABELS = {
+    student_abacus_class: '🧮 Abacus Student',
+    student_vedic_math: '🔢 Vedic Math',
+    ttp_teacher_training: '👩‍🏫 TTP Training',
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 600, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>📋 Lead Report — {lead.name}</h3>
+          <button className="modal-close" onClick={onClose}><MdClose /></button>
+        </div>
+
+        {/* Lead Info Card */}
+        <div style={{ background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 20px' }}>
+            {[
+              { label: 'Name', value: lead.name || '—' },
+              { label: 'Phone', value: lead.phone || '—' },
+              { label: 'Email', value: lead.email || '—' },
+              { label: 'City', value: lead.city || '—' },
+              { label: 'Program', value: PROGRAM_LABELS[lead.lead_program] || lead.lead_program || '—' },
+              { label: 'Source', value: lead.source || '—' },
+              { label: 'Status', value: (lead.status || 'new').charAt(0).toUpperCase() + (lead.status || 'new').slice(1) },
+              { label: 'Added On', value: fmtDT(lead.created_at) },
+            ].map(({ label, value }) => (
+              <div key={label}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#ea580c', textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Followup Timeline */}
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Follow-up History ({loadingF ? '…' : followups.length} entries)
+          </div>
+          {loadingF ? (
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>Loading history…</p>
+          ) : followups.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+              <div style={{ fontSize: 30, marginBottom: 8 }}>📭</div>
+              No follow-ups recorded yet.
+            </div>
+          ) : (
+            <div style={{ position: 'relative', paddingLeft: 24 }}>
+              {/* Vertical timeline line */}
+              <div style={{ position: 'absolute', left: 8, top: 0, bottom: 0, width: 2, background: '#fed7aa', borderRadius: 2 }} />
+              {followups.map((f, i) => {
+                const isDone = f.reminder_sent;
+                const isDeleted = f.is_deleted;
+                return (
+                  <div key={f.id} style={{ position: 'relative', marginBottom: 14, opacity: isDeleted ? 0.45 : 1 }}>
+                    {/* Circle dot on timeline */}
+                    <div style={{
+                      position: 'absolute', left: -20, top: 8,
+                      width: 12, height: 12, borderRadius: '50%',
+                      background: isDone ? '#16a34a' : '#ea580c',
+                      border: '2px solid #fff',
+                      boxShadow: `0 0 0 2px ${isDone ? '#bbf7d0' : '#fed7aa'}`,
+                    }} />
+                    <div style={{
+                      background: isDone ? '#f0fdf4' : '#fff7ed',
+                      border: `1.5px solid ${isDone ? '#bbf7d0' : '#fed7aa'}`,
+                      borderRadius: 10, padding: '10px 14px',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 700,
+                            background: isDone ? '#dcfce7' : '#ffedd5',
+                            color: isDone ? '#16a34a' : '#ea580c',
+                            padding: '2px 8px', borderRadius: 8,
+                          }}>#{f.followup_number || i + 1}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{fmtDT(f.next_followup_at)}</span>
+                        </div>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 8,
+                          background: isDone ? '#f0fdf4' : '#fef9c3',
+                          color: isDone ? '#16a34a' : '#ca8a04',
+                          border: `1px solid ${isDone ? '#bbf7d0' : '#fde68a'}`,
+                        }}>
+                          {isDeleted ? '🗑 Deleted' : isDone ? '✓ Reminder Sent' : '⏳ Pending'}
+                        </span>
+                      </div>
+                      {f.note && (
+                        <p style={{ margin: '8px 0 0', fontSize: 13, color: '#374151', lineHeight: 1.5, background: 'rgba(255,255,255,0.6)', borderRadius: 6, padding: '6px 10px' }}>
+                          💬 {f.note}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Summary footer */}
+        {!loadingF && followups.length > 0 && (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16, padding: '12px 14px', background: '#f9f4ef', borderRadius: 10, border: '1.5px solid #f0e8de' }}>
+            {[
+              { label: 'Total', value: followups.length, color: '#ea580c' },
+              { label: 'Reminded', value: followups.filter(f => f.reminder_sent).length, color: '#16a34a' },
+              { label: 'Pending', value: followups.filter(f => !f.reminder_sent && !f.is_deleted).length, color: '#ca8a04' },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color }}>{value}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BulkReportModal({ leads, onClose }) {
+  const [followupsMap, setFollowupsMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState({});
+
+  useEffect(() => {
+    (async () => {
+      const ids = leads.map(l => l.id);
+      const { data } = await supabase
+        .from('ttp_followups')
+        .select('*')
+        .in('lead_id', ids)
+        .order('followup_number', { ascending: true });
+      const map = {};
+      (data || []).forEach(f => {
+        if (!map[f.lead_id]) map[f.lead_id] = [];
+        map[f.lead_id].push(f);
+      });
+      setFollowupsMap(map);
+      // auto-expand all by default
+      const exp = {};
+      ids.forEach(id => { exp[id] = true; });
+      setExpanded(exp);
+      setLoading(false);
+    })();
+  }, [leads]);
+
+  const fmtDT = (dt) => dt
+    ? new Date(dt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '—';
+
+  const PROGRAM_LABELS = {
+    student_abacus_class: '🧮 Abacus Student',
+    student_vedic_math: '🔢 Vedic Math',
+    ttp_teacher_training: '👩‍🏫 TTP Training',
+  };
+
+  const totalFollowups = Object.values(followupsMap).reduce((s, arr) => s + arr.length, 0);
+  const totalReminded  = Object.values(followupsMap).reduce((s, arr) => s + arr.filter(f => f.reminder_sent).length, 0);
+  const totalPending   = Object.values(followupsMap).reduce((s, arr) => s + arr.filter(f => !f.reminder_sent && !f.is_deleted).length, 0);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 680, maxHeight: '92vh', overflowY: 'auto', padding: 0 }} onClick={e => e.stopPropagation()}>
+        {/* Sticky header */}
+        <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1.5px solid #f0e8de', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>📋 Bulk Report — {leads.length} Lead{leads.length !== 1 ? 's' : ''}</h3>
+            {!loading && <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>{totalFollowups} total follow-ups across all selected leads</p>}
+          </div>
+          <button className="modal-close" onClick={onClose}><MdClose /></button>
+        </div>
+
+        <div style={{ padding: '16px 20px' }}>
+          {/* Overall summary */}
+          {!loading && (
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+              {[
+                { label: 'Leads Selected', value: leads.length, bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
+                { label: 'Total Follow-ups', value: totalFollowups, bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
+                { label: 'Reminded', value: totalReminded, bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+                { label: 'Pending', value: totalPending, bg: '#fef9c3', color: '#ca8a04', border: '#fde68a' },
+              ].map(({ label, value, bg, color, border }) => (
+                <div key={label} style={{ flex: 1, textAlign: 'center', background: bg, border: `1.5px solid ${border}`, borderRadius: 10, padding: '10px 6px' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color, opacity: 0.8, textTransform: 'uppercase' }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-muted)', fontSize: 14 }}>Loading follow-up history…</div>
+          ) : (
+            leads.map((lead, idx) => {
+              const fups = followupsMap[lead.id] || [];
+              const isOpen = expanded[lead.id];
+              const st = STATUS_COLORS[lead.status] || STATUS_COLORS.new;
+              return (
+                <div key={lead.id} style={{ marginBottom: 12, border: '1.5px solid #f0e8de', borderRadius: 12, overflow: 'hidden' }}>
+                  {/* Lead header row */}
+                  <div
+                    onClick={() => setExpanded(e => ({ ...e, [lead.id]: !e[lead.id] }))}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fff7ed', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <div style={{ width: 36, height: 36, borderRadius: 9, background: 'var(--gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
+                      {idx + 1}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#1a1a1a' }}>{lead.name || '—'}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{lead.phone || '—'}{lead.city ? ` · ${lead.city}` : ''}</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, background: st.bg, color: st.color, border: `1.5px solid ${st.border}`, padding: '2px 8px', borderRadius: 8, fontWeight: 700 }}>
+                        {(lead.status || 'new').charAt(0).toUpperCase() + (lead.status || 'new').slice(1)}
+                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#ea580c', background: '#ffedd5', padding: '2px 8px', borderRadius: 8 }}>
+                        {fups.length} follow-up{fups.length !== 1 ? 's' : ''}
+                      </span>
+                      {isOpen ? <MdExpandLess size={18} style={{ color: 'var(--text-muted)' }} /> : <MdExpandMore size={18} style={{ color: 'var(--text-muted)' }} />}
+                    </div>
+                  </div>
+
+                  {/* Followup timeline (collapsible) */}
+                  {isOpen && (
+                    <div style={{ padding: '12px 16px', background: '#fff' }}>
+                      {fups.length === 0 ? (
+                        <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>No follow-ups recorded.</p>
+                      ) : (
+                        <div style={{ position: 'relative', paddingLeft: 22 }}>
+                          <div style={{ position: 'absolute', left: 7, top: 0, bottom: 0, width: 2, background: '#fed7aa', borderRadius: 2 }} />
+                          {fups.map((f, fi) => {
+                            const isDone = f.reminder_sent;
+                            return (
+                              <div key={f.id} style={{ position: 'relative', marginBottom: 10 }}>
+                                <div style={{ position: 'absolute', left: -19, top: 7, width: 10, height: 10, borderRadius: '50%', background: isDone ? '#16a34a' : '#ea580c', border: '2px solid #fff', boxShadow: `0 0 0 2px ${isDone ? '#bbf7d0' : '#fed7aa'}` }} />
+                                <div style={{ background: isDone ? '#f0fdf4' : '#fff7ed', border: `1.5px solid ${isDone ? '#bbf7d0' : '#fed7aa'}`, borderRadius: 8, padding: '8px 12px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <span style={{ fontSize: 10, fontWeight: 700, background: isDone ? '#dcfce7' : '#ffedd5', color: isDone ? '#16a34a' : '#ea580c', padding: '1px 6px', borderRadius: 6 }}>#{f.followup_number || fi + 1}</span>
+                                      <span style={{ fontSize: 12, fontWeight: 700 }}>{fmtDT(f.next_followup_at)}</span>
+                                    </div>
+                                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: isDone ? '#f0fdf4' : '#fef9c3', color: isDone ? '#16a34a' : '#ca8a04', border: `1px solid ${isDone ? '#bbf7d0' : '#fde68a'}` }}>
+                                      {f.is_deleted ? '🗑 Deleted' : isDone ? '✓ Reminded' : '⏳ Pending'}
+                                    </span>
+                                  </div>
+                                  {f.note && <p style={{ margin: '6px 0 0', fontSize: 12, color: '#374151', lineHeight: 1.5 }}>💬 {f.note}</p>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0e8de', display: 'flex', gap: 8, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                        <span>📧 {lead.email || '—'}</span>
+                        <span>🏷 {PROGRAM_LABELS[lead.lead_program] || lead.lead_program || '—'}</span>
+                        <span>📌 {lead.source || '—'}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AddLeadModal({ onClose, onAdd }) {
   const [form, setForm] = useState({ name: '', phone: '', email: '', city: '', source: 'manual', lead_program: 'student_abacus_class', campaign: '' });
   const [saving, setSaving] = useState(false);
@@ -271,6 +594,22 @@ export default function LeadsPage() {
   const [programFilter, setProgramFilter] = useState('all');
   const [showModal, setShowModal] = useState(false);
   const [followupLead, setFollowupLead] = useState(null);
+  const [reportLead, setReportLead] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showBulkReport, setShowBulkReport] = useState(false);
+
+  const toggleSelect = (id) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length && filtered.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map(l => l.id)));
+    }
+  };
 
   const fetchLeads = useCallback(async () => {
     if (authLoading) return;
@@ -393,6 +732,27 @@ export default function LeadsPage() {
           {search && <button className="btn btn-secondary btn-sm" onClick={() => setSearch('')}><MdClose /> Clear</button>}
         </div>
 
+        {/* Bulk action bar */}
+        {selectedIds.size > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#2563eb' }}>{selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''} selected</span>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowBulkReport(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#2563eb', color: '#fff', border: 'none' }}
+            >
+              <MdAssignment size={15} /> Bulk Report
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setSelectedIds(new Set())}
+              style={{ marginLeft: 'auto' }}
+            >
+              <MdClose size={13} /> Clear
+            </button>
+          </div>
+        )}
+
         {cities.length > 0 && (
           <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, alignSelf: 'center' }}>CITIES:</span>
@@ -428,7 +788,14 @@ export default function LeadsPage() {
             <table className="crm-table">
               <thead>
                 <tr>
-                  <th>#</th><th>Name</th><th>Phone</th><th>Email</th><th>City</th><th>Source</th><th>Program</th><th>Follow-ups</th><th>Status</th><th>Added</th><th>Actions</th>
+                  <th style={{ width: 36, textAlign: 'center', cursor: 'pointer' }} onClick={toggleSelectAll}>
+                    {selectedIds.size === 0
+                      ? <MdCheckBoxOutlineBlank size={18} style={{ color: 'var(--text-muted)', verticalAlign: 'middle' }} />
+                      : selectedIds.size === filtered.length
+                        ? <MdCheckBox size={18} style={{ color: '#2563eb', verticalAlign: 'middle' }} />
+                        : <MdIndeterminateCheckBox size={18} style={{ color: '#2563eb', verticalAlign: 'middle' }} />}
+                  </th>
+                  <th style={{ width: 32 }}>#</th><th>Name</th><th>Phone</th><th style={{ maxWidth: 110 }}>Email</th><th>City</th><th>Source</th><th>Program</th><th>Follow-ups</th><th>Status</th><th>Added</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -436,18 +803,23 @@ export default function LeadsPage() {
                   const followupCount = lead.ttp_followups?.length || 0;
                   const hasPending = lead.ttp_followups?.some(f => !f.reminder_sent);
                   return (
-                    <tr key={lead.id}>
+                    <tr key={lead.id} style={{ background: selectedIds.has(lead.id) ? '#eff6ff' : undefined }}>
+                      <td style={{ textAlign: 'center', cursor: 'pointer', paddingRight: 0 }} onClick={() => toggleSelect(lead.id)}>
+                        {selectedIds.has(lead.id)
+                          ? <MdCheckBox size={17} style={{ color: '#2563eb', verticalAlign: 'middle' }} />
+                          : <MdCheckBoxOutlineBlank size={17} style={{ color: '#d1d5db', verticalAlign: 'middle' }} />}
+                      </td>
                       <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{i + 1}</td>
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
                             {(lead.name || '?').charAt(0).toUpperCase()}
                           </div>
-                          <span style={{ fontWeight: 600, fontSize: 14 }}>{lead.name || '—'}</span>
+                          <span style={{ fontWeight: 600, fontSize: 13 }}>{lead.name || '—'}</span>
                         </div>
                       </td>
                       <td><div style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'monospace', fontSize: 13 }}><MdPhone size={13} style={{ color: 'var(--text-muted)' }} />{lead.phone || '—'}</div></td>
-                      <td style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <td style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {lead.email ? <a href={`mailto:${lead.email}`} style={{ color: '#2563eb', textDecoration: 'none' }}>{lead.email}</a> : '—'}
                       </td>
                       <td style={{ fontSize: 13 }}>{lead.city || '—'}</td>
@@ -473,19 +845,27 @@ export default function LeadsPage() {
                         ); })()}
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'nowrap', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', alignItems: 'center' }}>
+                          <button
+                            className="btn btn-sm"
+                            title="Lead Report"
+                            onClick={() => setReportLead(lead)}
+                            style={{ background: '#eff6ff', color: '#2563eb', border: '1.5px solid #bfdbfe', padding: '4px 6px' }}
+                          >
+                            <MdAssignment size={14} />
+                          </button>
                           <button
                             className="btn btn-sm"
                             title="Add Follow-up"
                             onClick={() => setFollowupLead(lead)}
-                            style={{ background: '#fff7ed', color: '#ea580c', border: '1.5px solid #fed7aa', padding: '5px 8px' }}
+                            style={{ background: '#fff7ed', color: '#ea580c', border: '1.5px solid #fed7aa', padding: '4px 6px' }}
                           >
-                            <MdCalendarToday size={15} />
+                            <MdCalendarToday size={14} />
                           </button>
                           {lead.phone && (
-                            <button className="btn btn-whatsapp btn-sm" title="WhatsApp" style={{ padding: '5px 8px' }}
+                            <button className="btn btn-whatsapp btn-sm" title="WhatsApp" style={{ padding: '4px 6px' }}
                               onClick={() => { window.location.href = `/whatsapp?name=${encodeURIComponent(lead.name)}&phone=${encodeURIComponent(lead.phone)}&template=0`; }}>
-                              <FaWhatsapp size={15} />
+                              <FaWhatsapp size={14} />
                             </button>
                           )}
                           {lead.phone && <SmartfloCallButton phone={lead.phone} />}
@@ -493,9 +873,9 @@ export default function LeadsPage() {
                             className="btn btn-sm"
                             title="Delete Lead"
                             onClick={() => handleDeleteLead(lead.id, lead.name)}
-                            style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', padding: '5px 8px' }}
+                            style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', padding: '4px 6px' }}
                           >
-                            <MdDelete size={15} />
+                            <MdDelete size={14} />
                           </button>
                         </div>
                       </td>
@@ -524,9 +904,17 @@ export default function LeadsPage() {
               const hasPending = lead.ttp_followups?.some(f => !f.reminder_sent);
               const { shortDT } = formatIST(lead.created_at);
               return (
-                <div key={lead.id} className="lead-mobile-card">
+                <div key={lead.id} className="lead-mobile-card" style={{ outline: selectedIds.has(lead.id) ? '2px solid #2563eb' : undefined }}>
                   {/* Card header */}
                   <div className="lead-card-header">
+                    <div
+                      onClick={() => toggleSelect(lead.id)}
+                      style={{ cursor: 'pointer', paddingRight: 6, flexShrink: 0, display: 'flex', alignItems: 'center' }}
+                    >
+                      {selectedIds.has(lead.id)
+                        ? <MdCheckBox size={20} style={{ color: '#2563eb' }} />
+                        : <MdCheckBoxOutlineBlank size={20} style={{ color: '#d1d5db' }} />}
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
                       <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 15, fontWeight: 700, flexShrink: 0 }}>
                         {(lead.name || '?').charAt(0).toUpperCase()}
@@ -549,8 +937,14 @@ export default function LeadsPage() {
 
                   {/* Card actions */}
                   <div className="lead-card-actions">
-                    <button
-                      className="btn btn-secondary btn-sm"
+                    <button                      className="btn btn-sm"
+                      title="Lead Report"
+                      onClick={() => setReportLead(lead)}
+                      style={{ background: '#eff6ff', color: '#2563eb', border: '1.5px solid #bfdbfe', padding: '6px 10px' }}
+                    >
+                      <MdAssignment size={16} />
+                    </button>
+                    <button                      className="btn btn-secondary btn-sm"
                       style={{ flex: 1, justifyContent: 'center' }}
                       onClick={() => setFollowupLead(lead)}
                     >
@@ -588,6 +982,13 @@ export default function LeadsPage() {
 
       {showModal && <AddLeadModal onClose={() => setShowModal(false)} onAdd={(lead) => setLeads(ls => [{ ...lead, ttp_followups: [] }, ...ls])} />}
       {followupLead && <FollowupModal lead={followupLead} onClose={() => setFollowupLead(null)} />}
+      {reportLead && <LeadReportModal lead={reportLead} onClose={() => setReportLead(null)} />}
+      {showBulkReport && (
+        <BulkReportModal
+          leads={filtered.filter(l => selectedIds.has(l.id))}
+          onClose={() => setShowBulkReport(false)}
+        />
+      )}
     </div>
   );
 }

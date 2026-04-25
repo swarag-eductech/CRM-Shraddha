@@ -579,9 +579,10 @@ export async function updateSettings(settings) {
 // SMARTFLO CLICK-TO-CALL
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function callCustomer(phone) {
+export async function callCustomer(phone, agent) {
+  if (!agent) throw new Error('Please select an agent before calling.');
   const { data, error } = await supabase.functions.invoke('click-to-call', {
-    body: { phone },
+    body: { phone, agent },
   });
   if (error) throw error;
   if (data && !data.success) throw new Error(data.error || 'Call failed');

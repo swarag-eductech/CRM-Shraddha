@@ -1,23 +1,23 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
-import DashboardPage from './pages/DashboardPage';
-import LeadsPage from './pages/LeadsPage';
-import MeetingsPage from './pages/MeetingsPage';
-import WhatsAppPage from './pages/WhatsAppPage';
-import MessagesPage from './pages/MessagesPage';
-import SettingsPage from './pages/SettingsPage';
-import TodayTasksPage from './pages/TodayTasksPage';
-import LeadsKanbanPage from './pages/LeadsKanbanPage';
-import AnalyticsPage from './pages/AnalyticsPage';
-import AdminDashboard from './pages/AdminDashboard';
-import LeadPoolPage from './pages/LeadPoolPage';
-
-// New Login & Protection Components
-import LoginPage from './pages/AdminLoginPage'; // Using existing admin login page for overall entry
 import ProtectedRoute from './components/ProtectedRoute';
+import LoginPage from './pages/AdminLoginPage';
+
+const DashboardPage    = lazy(() => import('./pages/DashboardPage'));
+const LeadsPage        = lazy(() => import('./pages/LeadsPage'));
+const MeetingsPage     = lazy(() => import('./pages/MeetingsPage'));
+const WhatsAppPage     = lazy(() => import('./pages/WhatsAppPage'));
+const MessagesPage     = lazy(() => import('./pages/MessagesPage'));
+const SettingsPage     = lazy(() => import('./pages/SettingsPage'));
+const TodayTasksPage   = lazy(() => import('./pages/TodayTasksPage'));
+const LeadsKanbanPage  = lazy(() => import('./pages/LeadsKanbanPage'));
+const AnalyticsPage    = lazy(() => import('./pages/AnalyticsPage'));
+const AdminDashboard   = lazy(() => import('./pages/AdminDashboard'));
+const LeadPoolPage          = lazy(() => import('./pages/LeadPoolPage'));
+const TeacherSupportPage    = lazy(() => import('./pages/TeacherSupportPage'));
 
 function Layout({ children, activePage, mobileOpen, setMobileOpen }) {
   return (
@@ -44,6 +44,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontSize: 16, color: '#ff6600' }}>Loading…</div>}>
       <Routes>
         {/* Entry Login Page */}
         <Route path="/login" element={<LoginPage />} />
@@ -109,9 +110,17 @@ function App() {
           </ProtectedRoute>
         } />
 
+        {/* Teacher Support Desk */}
+        <Route path="/teacher-support" element={
+          <ProtectedRoute requireAdmin={false}>
+            <Layout activePage="teacher-support" mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}><TeacherSupportPage /></Layout>
+          </ProtectedRoute>
+        } />
+
         {/* Fallback to Dashboard/Login */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
