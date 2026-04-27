@@ -19,6 +19,7 @@ export default function LeadModal({ lead, onClose, onUpdated }) {
   const [loadingTL, setLoadingTL] = useState(false);
   const [messages, setMessages] = useState([]);
   const [newMsg, setNewMsg] = useState('');
+  const [deleteFollowupConfirm, setDeleteFollowupConfirm] = useState(null); // followupId
 
   useEffect(() => {
     (async () => {
@@ -67,12 +68,17 @@ export default function LeadModal({ lead, onClose, onUpdated }) {
     } catch (err) { alert('Dismiss failed: ' + err.message); }
   };
 
-  const handleDeleteFollowup = async (followupId) => {
-    if (!window.confirm('Delete this follow-up?')) return;
+  const handleDeleteFollowup = (followupId) => {
+    setDeleteFollowupConfirm(followupId);
+  };
+
+  const confirmDeleteFollowup = async () => {
+    if (!deleteFollowupConfirm) return;
     try {
-      await softDeleteFollowup(followupId);
-      setFollowups(prev => prev.filter(f => f.id !== followupId));
+      await softDeleteFollowup(deleteFollowupConfirm);
+      setFollowups(prev => prev.filter(f => f.id !== deleteFollowupConfirm));
     } catch (err) { alert('Delete failed: ' + err.message); }
+    finally { setDeleteFollowupConfirm(null); }
   };
 
   const handleSendMessage = async (e) => {
@@ -346,6 +352,28 @@ export default function LeadModal({ lead, onClose, onUpdated }) {
           )}
         </div>
       </div>
+      {/* Delete Follow-up Confirmation Modal */}
+      {deleteFollowupConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 400, boxShadow: '0 24px 64px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#ff6600,#f97316)', padding: '16px 22px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🗑️</div>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>Delete Follow-up</div>
+            </div>
+            <div style={{ padding: '20px 22px 18px' }}>
+              <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: '#1e293b' }}>Are you sure you want to delete this follow-up?</p>
+              <div style={{ background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#ea580c', fontWeight: 600 }}>📅 This follow-up will be permanently removed.</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>This action cannot be undone.</div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setDeleteFollowupConfirm(null)} style={{ padding: '8px 20px', borderRadius: 8, border: '1.5px solid #f0e8de', background: '#fff7ed', cursor: 'pointer', fontWeight: 600, fontSize: 13, color: '#ea580c' }}>Cancel</button>
+                <button onClick={confirmDeleteFollowup} style={{ padding: '8px 20px', borderRadius: 8, background: 'linear-gradient(135deg,#ff6600,#f97316)', color: '#fff', border: 'none', fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>🗑️ Yes, Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

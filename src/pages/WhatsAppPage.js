@@ -7,22 +7,58 @@ const templates = [
   {
     label: 'Welcome / Enquiry',
     icon: '👋',
-    message: `Hello {name}! 👋\n\nThank you for your interest in *Shraddha Institute*.\n\nWe specialize in professional Teacher Training for:\n🧮 *Abacus Mental Math*\n✨ *Vedic Mathematics*\n\nWould you like to schedule a FREE demo session to see our training methodology?\n\nReply *YES* to proceed.\n\n– Shraddha Institute Team`,
+    stage: 'Stage 1',
+    english: `Hi {name}! 😊\n\nIt was great talking to you today about the *Abacus & Vedic Maths Teaching Program*.\n\nThis program helps you start earning from home (₹20–50k/month potential).\n\n👉 Training + study material + support — everything is included.\n\nSending you the details 👇\n_(Insert brochure / video)_\n\nFeel free to ask if you have any doubts 👍\n\n– Shraddha Institute`,
+    marathi: `Hi {name}! 😊\n\nAaj tumshi abacus & vedic maths teaching program babat bolun chhan vatla.\n\nHe program tumhala gharbaslya income start karayla help karto (₹20–50k/month potential).\n\n👉 Training + study material + support sagla include aahe.\n\nMi details pathavtoy 👇\n_(Brochure / video insert kara)_\n\nKahi doubt asel tar nakki vichara 👍\n\n– Shraddha Institute`,
+  },
+  {
+    label: 'Value Build',
+    icon: '🔥',
+    stage: 'Stage 2',
+    english: `Hi {name}! 👇\n\nA quick update to share —\n\nSome of our teachers who started *part-time* are now earning *₹15k–₹30k/month* 👩‍🏫\n\nBest part — no prior teaching experience needed,\nwe provide *step-by-step training*.\n\nAre you interested in starting like this?\n\n👉 _(Reply and I'll guide you 🔥)_\n\n– Shraddha Institute`,
+    marathi: `Hi {name}! 👇\n\nEk quick info share karto —\n\nAamche kahi teachers ata part-time start karun monthly *₹15k–₹30k* earn kartay 👩‍🏫\n\nBest part — teaching experience lagat nahi,\nstep-by-step training deto.\n\nTumhala suddha asa start karaycha interest aahe ka?\n\n👉 _(Question = reply milto 🔥)_\n\n– Shraddha Institute`,
   },
   {
     label: 'Meeting Reminder',
     icon: '📅',
-    message: `Hello {name}! 🙏\n\nThis is a reminder for your upcoming *Teacher Training* session with *Shraddha Institute*.\n\n🕐 Time: [Date & Time]\n🔗 Link: [Meet Link]\n\nPlease join 2 minutes early with your Abacus tool/notebook.\n\nSee you soon! 😊\n– Shraddha Institute`,
+    stage: 'Reminder',
+    english: `Hello {name}! 🙏\n\nThis is a reminder for your upcoming *Teacher Training* session with *Shraddha Institute*.\n\n🕐 Time: [Date & Time]\n🔗 Link: [Meet Link]\n\nPlease join 2 minutes early with your Abacus tool/notebook.\n\nSee you soon! 😊\n– Shraddha Institute`,
+    marathi: `Hello {name}! 🙏\n\nTumchya upcoming *Teacher Training* session chi reminder —\n*Shraddha Institute* sathi.\n\n🕐 Vel: [Date & Time]\n🔗 Link: [Meet Link]\n\nKrupaya 2 minutes aadhi join kara Abacus tool/notebook gheun.\n\nBhetu lvakar! 😊\n– Shraddha Institute`,
   },
   {
     label: 'Follow-Up',
     icon: '🔔',
-    message: `Hi {name}! 😊\n\nWe noticed you enquired about our *Abacus & Vedic Math Teacher Training*.\n\nWhy start your journey now?\n✅ High Demand for Teachers\n✅ Work from Home / Offline\n✅ Certification included\n✅ Business Support Provided\n\nStart your own classes after training! 🎓🎯\n\nCall/WhatsApp: 99XXXXXXXX\n– Shraddha Institute`,
+    stage: 'Stage 3',
+    english: `Hi {name} 🙂\n\nYou had a look at the program yesterday…\n\nJust wanted to confirm —\nAre you interested in *joining*\nor do you need more clarity on anything?\n\n– Shraddha Institute`,
+    marathi: `Hi {name} 🙂\n\nKal tumhi program baghitla hota…\n\nFakt confirm karaycha hota —\nTumhala join karaycha interest aahe ka\nki ajun kahi clarity pahije?\n\n– Shraddha Institute`,
   },
   {
-    label: 'Converted / Welcome',
-    icon: '🎉',
-    message: `Congratulations {name}! 🎉\n\nWelcome to the *Shraddha Institute Teacher Training Program*! 🧮📖\n\nYour enrollment is confirmed. Here's what's next:\n\n📌 Orientation: [Date]\n📌 Batch Start: [Date]\n📌 Training Kits: Sent to your address\n\nFor any support: 99XXXXXXXX\n\nLet's empower students together! 🌟\n– Shraddha Institute`,
+    label: 'Thinking Leads',
+    icon: '💭',
+    stage: 'Stage 4',
+    english: `Hi {name}! 👍\n\nTotally understand — it's natural to think before making a decision.\n\nBut one thing I'll share —\nmost people keep thinking but never start\nand end up *missing the opportunity*.\n\nIf you can let me know whether you want to start or not,\nI can guide you properly 🙂\n\n– Shraddha Institute`,
+    marathi: `Hi {name}! 👍\n\nTotally samajto —\nDecision ghetaana vichar karava lagto.\n\nPan ek goshta sangto —\nmaximum lok vichar kartat pan start kart nahi\naani opportunity miss hote.\n\nTumhala start karaycha aahe ka nahi\nhe clear zal tar mi tumhala proper guide karu shakto 🙂\n\n– Shraddha Institute`,
+  },
+  {
+    label: 'Urgency + Offer',
+    icon: '⚡',
+    stage: 'Stage 5',
+    english: `Hi {name}! 🔥\n\nWanted to give you an update —\nOnly *limited seats* are left for this batch.\n\nIf you confirm *today*,\n👉 I'll give you *bonus training + marketing support* for free.\n\nShould I block your seat?\n\n– Shraddha Institute`,
+    marathi: `Hi {name}! 🔥\n\nUpdate dyaycha hota —\nya batch sathi *limited seats* urlya aahet.\n\nAaj confirm kelat tar\n👉 *bonus training + marketing support* free deto.\n\nMi tumchi seat block karu ka?\n\n– Shraddha Institute`,
+  },
+  {
+    label: 'Ghost Reactivation',
+    icon: '👻',
+    stage: 'Stage 6',
+    english: `Hi {name} 🙂\n\nI was following up with you…\n\nYou had shown interest earlier but didn't join —\nwas there a *specific reason*?\n\nI can help 🙂\n\n– Shraddha Institute`,
+    marathi: `Hi {name} 🙂\n\nMi tumcha follow-up karto hota…\n\nTumhi interest dakhavla hota pan join nahi kela —\nkahi specific reason hota ka?\n\nMi help karu shakto 🙂\n\n– Shraddha Institute`,
+  },
+  {
+    label: 'Final Close',
+    icon: '🎯',
+    stage: 'Stage 7',
+    english: `Hi {name} 🙂\n\nGiving you the *last update* —\n\nThe batch is closing *today*…\nIf you want to join,\nI can enroll you *right now*.\n\nOtherwise, you'll have to wait for the next batch.\n\n– Shraddha Institute`,
+    marathi: `Hi {name} 🙂\n\nLast update detoy —\n\nAaj *batch closing* aahe…\nTumhala join karaycha asel tar\nmi ata pan tumhala *enroll* karu shakto.\n\nNantar next batch wait karava lagel.\n\n– Shraddha Institute`,
   },
 ];
 
@@ -33,7 +69,8 @@ export default function WhatsAppPage() {
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [activeTemplate, setActiveTemplate] = useState(0);
-  const [message, setMessage] = useState(templates[0].message.replace('{name}', 'Student'));
+  const [lang, setLang] = useState('marathi');
+  const [message, setMessage] = useState(templates[0].marathi.replace('{name}', 'Ma\'am'));
 
   // Effect to handle URL parameters
   useEffect(() => {
@@ -44,27 +81,29 @@ export default function WhatsAppPage() {
     if (pName || pPhone) {
       if (pName) setName(pName);
       if (pPhone) setPhone(pPhone.replace(/\D/g, '').slice(-10));
-      
-      const tIdx = pTpl ? parseInt(pTpl) : 0;
-      if (!isNaN(tIdx) && templates[tIdx]) {
-        setActiveTemplate(tIdx);
-        setMessage(templates[tIdx].message.replace('{name}', pName || 'Student'));
-      } else {
-        setMessage(templates[activeTemplate].message.replace('{name}', pName || 'Student'));
-      }
-    }
-  }, [searchParams, activeTemplate]);
 
-  const applyTemplate = (idx) => {
+      const tIdx = pTpl ? parseInt(pTpl) : 0;
+      const tpl = (!isNaN(tIdx) && templates[tIdx]) ? templates[tIdx] : templates[activeTemplate];
+      setActiveTemplate(!isNaN(tIdx) && templates[tIdx] ? tIdx : activeTemplate);
+      setMessage(tpl[lang].replace('{name}', pName || 'Ma\'am'));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const applyTemplate = (idx, langOverride) => {
+    const useLang = langOverride || lang;
     setActiveTemplate(idx);
-    const msg = templates[idx].message.replace('{name}', name || 'Student');
-    setMessage(msg);
+    setMessage(templates[idx][useLang].replace('{name}', name || 'Ma\'am'));
+  };
+
+  const switchLang = (newLang) => {
+    setLang(newLang);
+    setMessage(templates[activeTemplate][newLang].replace('{name}', name || 'Ma\'am'));
   };
 
   const updateName = (n) => {
     setName(n);
-    // Simple regex to replace the greeting part while keeping the emoji/punctuation
-    setMessage(msg => msg.replace(/^(Hello|Hi|Congratulations)\s+[^!\n?]+([!👋🙏😊🎉])/u, `$1 ${n || 'Student'}$2`));
+    setMessage(templates[activeTemplate][lang].replace('{name}', n || 'Ma\'am'));
   };
 
   const sendWhatsApp = () => {
@@ -94,17 +133,38 @@ export default function WhatsAppPage() {
             <p>Pick a template to get started</p>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+        {/* Language Toggle */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Language:</span>
+          {['english', 'marathi'].map(l => (
+            <button key={l} onClick={() => switchLang(l)} style={{
+              padding: '5px 16px', borderRadius: 20, border: '1.5px solid',
+              borderColor: lang === l ? 'var(--primary)' : 'var(--border)',
+              background: lang === l ? 'var(--primary)' : '#fff',
+              color: lang === l ? '#fff' : 'var(--text-muted)',
+              fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'all 0.18s',
+            }}>
+              {l === 'english' ? '🇬🇧 English' : '🇮🇳 Marathi'}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
           {templates.map((t, i) => (
             <button key={t.label} onClick={() => applyTemplate(i)} style={{
-              padding: '14px 16px', borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s',
+              padding: '12px 14px', borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s',
               textAlign: 'left', border: '2px solid',
               borderColor: activeTemplate === i ? 'var(--primary)' : 'var(--border)',
               background: activeTemplate === i ? 'rgba(255,102,0,0.05)' : '#fff',
               lineHeight: 1.4,
             }}>
-              <div style={{ fontSize: 22, marginBottom: 6 }}>{t.icon}</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: activeTemplate === i ? 'var(--primary)' : 'var(--text-dark)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 18 }}>{t.icon}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: activeTemplate === i ? 'var(--primary)' : '#94a3b8',
+                  background: activeTemplate === i ? 'rgba(255,102,0,0.1)' : '#f1f5f9',
+                  padding: '1px 7px', borderRadius: 10 }}>{t.stage}</span>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: activeTemplate === i ? 'var(--primary)' : 'var(--text-dark)' }}>
                 {t.label}
               </div>
             </button>

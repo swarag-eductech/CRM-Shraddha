@@ -597,6 +597,7 @@ export default function LeadsPage() {
   const [reportLead, setReportLead] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showBulkReport, setShowBulkReport] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, name }
 
   const toggleSelect = (id) => setSelectedIds(prev => {
     const next = new Set(prev);
@@ -629,12 +630,17 @@ export default function LeadsPage() {
     setLeads(data || []);
   }, [userId, isAdmin, authLoading]);
 
-  const handleDeleteLead = async (leadId, leadName) => {
-    if (!window.confirm(`Delete lead "${leadName}"? This cannot be undone.`)) return;
+  const handleDeleteLead = (leadId, leadName) => {
+    setDeleteConfirm({ id: leadId, name: leadName });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
     try {
-      await softDeleteLead(leadId);
-      setLeads(prev => prev.filter(l => l.id !== leadId));
+      await softDeleteLead(deleteConfirm.id);
+      setLeads(prev => prev.filter(l => l.id !== deleteConfirm.id));
     } catch (err) { alert('Delete failed: ' + err.message); }
+    finally { setDeleteConfirm(null); }
   };
 
   useEffect(() => {
@@ -988,6 +994,51 @@ export default function LeadsPage() {
           leads={filtered.filter(l => selectedIds.has(l.id))}
           onClose={() => setShowBulkReport(false)}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 420, boxShadow: '0 24px 64px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ background: 'linear-gradient(135deg,#ff6600,#f97316)', padding: '18px 24px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🗑️</div>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>Delete Lead</div>
+            </div>
+            {/* Body */}
+            <div style={{ padding: '24px 24px 20px' }}>
+              <p style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: '#1e293b' }}>
+                Are you sure you want to delete this lead?
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0', background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: 10, padding: '10px 14px' }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: '#ffedd5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#ff6600', fontSize: 15, flexShrink: 0 }}>
+                  {(deleteConfirm.name || '?').charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#ea580c' }}>{deleteConfirm.name}</div>
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>This action cannot be undone.</div>
+                </div>
+              </div>
+              <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b' }}>
+                All follow-ups and data associated with this lead will be permanently removed.
+              </p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setDeleteConfirm(null)}
+                  style={{ padding: '9px 22px', borderRadius: 8, border: '1.5px solid #f0e8de', background: '#fff7ed', cursor: 'pointer', fontWeight: 600, fontSize: 14, color: '#ea580c' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  style={{ padding: '9px 22px', borderRadius: 8, background: 'linear-gradient(135deg,#ff6600,#f97316)', color: '#fff', border: 'none', fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  🗑️ Yes, Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -38,6 +38,7 @@ export default function MeetingsPage() {
   // Real-time tick (60s — matches cron cadence)
   const [tick, setTick] = useState(Date.now());
   const [editingMeeting, setEditingMeeting] = useState(null); // The meeting object being edited
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, label }
   // Reminder stats (live count from ttp_meeting_notifications)
   const [reminderSentCount, setReminderSentCount] = useState(0);
 
@@ -165,10 +166,17 @@ export default function MeetingsPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this meeting?')) return;
-    await deleteMeetingApi(id);
-    setMeetings((ms) => ms.filter((m) => m.id !== id));
+  const handleDelete = (id) => {
+    const m = meetings.find(mt => mt.id === id);
+    const label = m ? formatDateTime(m.meeting_datetime) : 'this meeting';
+    setDeleteConfirm({ id, label });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    try { await deleteMeetingApi(deleteConfirm.id); setMeetings(ms => ms.filter(m => m.id !== deleteConfirm.id)); }
+    catch (err) { alert('Delete failed: ' + err.message); }
+    finally { setDeleteConfirm(null); }
   };
 
   const handleAddLeadsSubmit = async (e) => {
@@ -819,6 +827,32 @@ export default function MeetingsPage() {
                 <button className="btn btn-secondary" onClick={() => setAttendanceModal({ open: false, meeting: null })}>Close</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 420, boxShadow: '0 24px 64px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg,#ff6600,#f97316)', padding: '18px 24px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🗑️</div>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>Delete Meeting</div>
+            </div>
+            <div style={{ padding: '24px 24px 20px' }}>
+              <p style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: '#1e293b' }}>Are you sure you want to delete this meeting?</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0', background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: 10, padding: '10px 14px' }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: '#ffedd5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📅</div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#ea580c' }}>{deleteConfirm.label}</div>
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>This action cannot be undone.</div>
+                </div>
+              </div>
+              <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b' }}>All attendance and data associated with this meeting will be permanently removed.</p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setDeleteConfirm(null)} style={{ padding: '9px 22px', borderRadius: 8, border: '1.5px solid #f0e8de', background: '#fff7ed', cursor: 'pointer', fontWeight: 600, fontSize: 14, color: '#ea580c' }}>Cancel</button>
+                <button onClick={confirmDelete} style={{ padding: '9px 22px', borderRadius: 8, background: 'linear-gradient(135deg,#ff6600,#f97316)', color: '#fff', border: 'none', fontWeight: 700, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>🗑️ Yes, Delete</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
