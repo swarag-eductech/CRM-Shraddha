@@ -127,20 +127,15 @@ function StatusBadge({ status, leadId, onUpdated }) {
   );
 }
 
-function FollowupModal({ lead, onClose }) {
-  const [followups, setFollowups] = useState([]);
-  const [loadingF, setLoadingF] = useState(true);
+function FollowupModal({ lead, onClose, onFollowupAdded }) {
+  const [followups, setFollowups] = useState(
+    [...(lead.ttp_followups || [])].sort((a, b) => (a.followup_number || 0) - (b.followup_number || 0))
+  );
+  const loadingF = false;
   const [form, setForm] = useState({ note: '', nextFollowupAt: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [extending, setExtending] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from('ttp_followups').select('*').eq('lead_id', lead.id).order('followup_number', { ascending: true });
-      setFollowups(data || []); setLoadingF(false);
-    })();
-  }, [lead.id]);
 
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -149,6 +144,7 @@ function FollowupModal({ lead, onClose }) {
     try {
       const newF = await addFollowup({ leadId: lead.id, note: form.note, nextFollowupAt: form.nextFollowupAt, extend: extending });
       setFollowups(prev => [...prev, newF]);
+      if (onFollowupAdded) onFollowupAdded(lead.id, newF);
       setForm({ note: '', nextFollowupAt: '' });
       setExtending(false);
     } catch (err) { setError(err.message); }
@@ -157,7 +153,14 @@ function FollowupModal({ lead, onClose }) {
 
   const fmtDT = (dt) => dt ? new Date(dt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 
-  return (
+  const setToNow = () => {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setForm(f => ({ ...f, nextFollowupAt: local }));
+  };
+
+  const modal = (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
@@ -196,7 +199,10 @@ function FollowupModal({ lead, onClose }) {
               )}
               {error && <p style={{ color: '#dc2626', fontSize: 12, margin: '0 0 8px' }}>⚠ {error}</p>}
               <div className="form-group" style={{ marginBottom: 10 }}>
-                <label>Date & Time *</label>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Date &amp; Time *</span>
+                  <button type="button" onClick={setToNow} style={{ fontSize: 11, fontWeight: 700, color: '#ff6600', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>Today Now</button>
+                </label>
                 <input type="datetime-local" className="form-input" value={form.nextFollowupAt} onChange={e => setForm(f => ({ ...f, nextFollowupAt: e.target.value }))} required />
               </div>
               <div className="form-group" style={{ marginBottom: 12 }}>
@@ -224,23 +230,12 @@ function FollowupModal({ lead, onClose }) {
       </div>
     </div>
   );
+  return ReactDOM.createPortal(modal, document.body);
 }
 
 function LeadReportModal({ lead, onClose }) {
-  const [followups, setFollowups] = useState([]);
-  const [loadingF, setLoadingF] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('ttp_followups')
-        .select('*')
-        .eq('lead_id', lead.id)
-        .order('followup_number', { ascending: true });
-      setFollowups(data || []);
-      setLoadingF(false);
-    })();
-  }, [lead.id]);
+  const followups = [...(lead.ttp_followups || [])].sort((a, b) => (a.followup_number || 0) - (b.followup_number || 0));
+  const loadingF = false;
 
   const fmtDT = (dt) => dt
     ? new Date(dt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -252,7 +247,7 @@ function LeadReportModal({ lead, onClose }) {
     ttp_teacher_training: '👩‍🏫 TTP Training',
   };
 
-  return (
+  const modal = (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 600, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
@@ -365,6 +360,7 @@ function LeadReportModal({ lead, onClose }) {
       </div>
     </div>
   );
+  return ReactDOM.createPortal(modal, document.body);
 }
 
 function BulkReportModal({ leads, onClose }) {
@@ -703,7 +699,7 @@ export default function LeadsPage() {
     setLoading(true); setError('');
     let query = supabase
       .from('ttp_leads')
-      .select('id, name, phone, email, city, source, lead_program, status, assigned_user_id, created_at, ttp_followups(id, followup_number, reminder_sent)')
+      .select('id, name, phone, email, city, source, lead_program, status, assigned_user_id, created_at, ttp_followups(id, followup_number, next_followup_at, note, reminder_sent, status, is_deleted)')
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })
       .limit(300);
@@ -733,12 +729,17 @@ export default function LeadsPage() {
     setLeads(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l));
   };
 
+  const handleFollowupAdded = (leadId, newFollowup) => {
+    setLeads(prev => prev.map(l =>
+      l.id === leadId ? { ...l, ttp_followups: [...(l.ttp_followups || []), newFollowup] } : l
+    ));
+  };
+
   useEffect(() => {
     fetchLeads();
     const ch = supabase
       .channel('leads_page')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_leads' }, () => fetchLeads())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_followups' }, () => fetchLeads())
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [fetchLeads]);
@@ -1094,7 +1095,7 @@ export default function LeadsPage() {
 
       {showModal && <AddLeadModal onClose={() => setShowModal(false)} onAdd={(lead) => setLeads(ls => [{ ...lead, ttp_followups: [] }, ...ls])} />}
       {editingLead && <EditLeadModal lead={editingLead} onClose={() => setEditingLead(null)} onSaved={handleLeadSaved} />}
-      {followupLead && <FollowupModal lead={followupLead} onClose={() => setFollowupLead(null)} />}
+      {followupLead && <FollowupModal lead={followupLead} onClose={() => setFollowupLead(null)} onFollowupAdded={handleFollowupAdded} />}
       {reportLead && <LeadReportModal lead={reportLead} onClose={() => setReportLead(null)} />}
       {showBulkReport && (
         <BulkReportModal
