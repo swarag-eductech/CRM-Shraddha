@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MdSearch, MdAdd, MdClose, MdRefresh, MdPhone, MdCalendarToday, MdExpandMore, MdExpandLess, MdDelete, MdAssignment, MdCheckBox, MdCheckBoxOutlineBlank, MdIndeterminateCheckBox } from 'react-icons/md';
+import ReactDOM from 'react-dom';
+import { MdSearch, MdAdd, MdClose, MdRefresh, MdPhone, MdCalendarToday, MdExpandMore, MdExpandLess, MdDelete, MdAssignment, MdCheckBox, MdCheckBoxOutlineBlank, MdIndeterminateCheckBox, MdEdit } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
-import { createLead, updateLeadStatus, addFollowup, softDeleteLead, callCustomer } from '../api';
+import { createLead, updateLead, updateLeadStatus, addFollowup, softDeleteLead, callCustomer } from '../api';
 import { formatIST } from '../utils/time';
 import { SourceBadge, ProgramBadge } from '../utils/sourceBadge';
 import { useAuth } from '../hooks/useAuth';
@@ -516,6 +517,90 @@ function BulkReportModal({ leads, onClose }) {
   );
 }
 
+// ─── Edit Lead Modal ─────────────────────────────────────────────────────────
+function EditLeadModal({ lead, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name:          lead.name          || '',
+    phone:         lead.phone         || '',
+    email:         lead.email         || '',
+    city:          lead.city          || '',
+    source:        lead.source        || 'manual',
+    lead_program:  lead.lead_program  || 'student_abacus_class',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState('');
+
+  const handle = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.phone.trim()) { setError('Name and Phone are required.'); return; }
+    setSaving(true); setError('');
+    try {
+      const updated = await updateLead(lead.id, form);
+      onSaved(updated);
+      onClose();
+    } catch (err) { setError(err.message); setSaving(false); }
+  };
+
+  const modal = (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <MdEdit style={{ color: '#ff6600' }} /> Edit Lead
+          </h3>
+          <button className="modal-close" onClick={onClose}><MdClose /></button>
+        </div>
+        {error && <div style={{ background: 'rgba(255,102,0,0.08)', border: '1px solid #fed7aa', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#ea580c' }}>⚠️ {error}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Full Name *</label>
+              <input className="form-input" placeholder="Enter full name" value={form.name} onChange={handle('name')} required />
+            </div>
+            <div className="form-group">
+              <label>Phone *</label>
+              <input className="form-input" placeholder="10-digit mobile" value={form.phone} onChange={handle('phone')} required maxLength={15} />
+            </div>
+            <div className="form-group">
+              <label>Email</label>
+              <input type="email" className="form-input" placeholder="email@example.com" value={form.email} onChange={handle('email')} />
+            </div>
+            <div className="form-group">
+              <label>City</label>
+              <input className="form-input" placeholder="City name" value={form.city} onChange={handle('city')} />
+            </div>
+            <div className="form-group">
+              <label>Source</label>
+              <select className="form-input" value={form.source} onChange={handle('source')}>
+                <option value="manual">✏️ Manual</option>
+                <option value="boosted_campaign">📢 Boosted Campaign</option>
+                <option value="landing_page">🌐 Landing Page</option>
+                <option value="website">💻 Website</option>
+                <option value="intrakt">💬 WhatsApp</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Program</label>
+              <select className="form-input" value={form.lead_program} onChange={handle('lead_program')}>
+                <option value="student_abacus_class">🧮 Abacus Student</option>
+                <option value="student_vedic_math">🔢 Vedic Math Student</option>
+                <option value="ttp_teacher_training">👩‍🏫 TTP Teacher Training</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-actions" style={{ marginTop: 20 }}>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+  return ReactDOM.createPortal(modal, document.body);
+}
+
 function AddLeadModal({ onClose, onAdd }) {
   const [form, setForm] = useState({ name: '', phone: '', email: '', city: '', source: 'manual', lead_program: 'student_abacus_class', campaign: '' });
   const [saving, setSaving] = useState(false);
@@ -595,6 +680,7 @@ export default function LeadsPage() {
   const [showModal, setShowModal] = useState(false);
   const [followupLead, setFollowupLead] = useState(null);
   const [reportLead, setReportLead] = useState(null);
+  const [editingLead, setEditingLead] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showBulkReport, setShowBulkReport] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, name }
@@ -641,6 +727,10 @@ export default function LeadsPage() {
       setLeads(prev => prev.filter(l => l.id !== deleteConfirm.id));
     } catch (err) { alert('Delete failed: ' + err.message); }
     finally { setDeleteConfirm(null); }
+  };
+
+  const handleLeadSaved = (updated) => {
+    setLeads(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l));
   };
 
   useEffect(() => {
@@ -854,6 +944,14 @@ export default function LeadsPage() {
                         <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', alignItems: 'center' }}>
                           <button
                             className="btn btn-sm"
+                            title="Edit Lead"
+                            onClick={() => setEditingLead(lead)}
+                            style={{ background: '#fff7ed', color: '#ff6600', border: '1.5px solid #fed7aa', padding: '4px 6px' }}
+                          >
+                            <MdEdit size={14} />
+                          </button>
+                          <button
+                            className="btn btn-sm"
                             title="Lead Report"
                             onClick={() => setReportLead(lead)}
                             style={{ background: '#eff6ff', color: '#2563eb', border: '1.5px solid #bfdbfe', padding: '4px 6px' }}
@@ -972,6 +1070,14 @@ export default function LeadsPage() {
                     {lead.phone && <SmartfloCallButton phone={lead.phone} />}
                     <button
                       className="btn btn-sm"
+                      title="Edit Lead"
+                      onClick={() => setEditingLead(lead)}
+                      style={{ background: '#fff7ed', color: '#ff6600', border: '1.5px solid #fed7aa', padding: '6px 10px' }}
+                    >
+                      <MdEdit size={16} />
+                    </button>
+                    <button
+                      className="btn btn-sm"
                       title="Delete Lead"
                       onClick={() => handleDeleteLead(lead.id, lead.name)}
                       style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', padding: '6px 10px' }}
@@ -987,6 +1093,7 @@ export default function LeadsPage() {
       </div>
 
       {showModal && <AddLeadModal onClose={() => setShowModal(false)} onAdd={(lead) => setLeads(ls => [{ ...lead, ttp_followups: [] }, ...ls])} />}
+      {editingLead && <EditLeadModal lead={editingLead} onClose={() => setEditingLead(null)} onSaved={handleLeadSaved} />}
       {followupLead && <FollowupModal lead={followupLead} onClose={() => setFollowupLead(null)} />}
       {reportLead && <LeadReportModal lead={reportLead} onClose={() => setReportLead(null)} />}
       {showBulkReport && (
