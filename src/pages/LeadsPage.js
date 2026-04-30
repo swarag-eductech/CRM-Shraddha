@@ -610,7 +610,7 @@ function AddLeadModal({ onClose, onAdd }) {
     catch (err) { setError(err.message); setSaving(false); }
   };
 
-  return (
+  const modal = (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
@@ -663,6 +663,7 @@ function AddLeadModal({ onClose, onAdd }) {
       </div>
     </div>
   );
+  return ReactDOM.createPortal(modal, document.body);
 }
 
 export default function LeadsPage() {

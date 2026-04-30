@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MdSend, MdRefresh, MdPhone } from 'react-icons/md';
+import { MdSend, MdRefresh, MdPhone, MdAttachFile, MdClose, MdPictureAsPdf, MdInsertDriveFile } from 'react-icons/md';
 import { FaWhatsapp } from 'react-icons/fa';
 import { supabase } from '../supabaseClient';
 import { useLeads } from '../hooks/useLeads';
+
+const ACCEPTED_TYPES = {
+  'image/jpeg': 'image', 'image/png': 'image', 'image/gif': 'image', 'image/webp': 'image',
+  'video/mp4': 'video', 'video/quicktime': 'video', 'video/webm': 'video',
+  'application/pdf': 'pdf',
+};
+const MAX_SIZE_MB = 20;
 
 export default function MessagesPage() {
   const { leads, loading } = useLeads();
@@ -11,7 +18,9 @@ export default function MessagesPage() {
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [attachment, setAttachment] = useState(null); // { file, previewUrl, mediaType, name }
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const activeLead = leads[activeIdx];
 
@@ -64,44 +73,53 @@ export default function MessagesPage() {
 
   const sendMessage = async (e) => {
     if (e) e.preventDefault();
-    if (!input.trim() || !activeLead || isSending) return;
+    const hasText = input.trim().length > 0;
+    const hasFile = !!attachment;
+    if ((!hasText && !hasFile) || !activeLead || isSending) return;
 
     const textToSend = input.trim();
     setInput('');
     setIsSending(true);
+    const pendingAttachment = attachment;
+    setAttachment(null);
 
     try {
-      // 1. Always save to DB directly (reliable, immediate)
+      let mediaUrl = null;
+      let mediaType = null;
+
+      // 1. Upload file to storage if attached
+      if (pendingAttachment) {
+        mediaUrl  = await uploadAttachment(activeLead.id, pendingAttachment.file, pendingAttachment.mediaType);
+        mediaType = pendingAttachment.mediaType;
+        if (pendingAttachment.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl);
+      }
+
+      // 2. Save to DB
       const { data: newMsg, error: dbError } = await supabase
         .from('ttp_messages')
         .insert([{
           lead_id: activeLead.id,
-          text: textToSend,
-          message_text: textToSend,
-          direction: 'outgoing'
+          text: textToSend || null,
+          message_text: textToSend || null,
+          direction: 'outgoing',
+          ...(mediaUrl ? { media_url: mediaUrl, media_type: mediaType } : {}),
         }])
         .select()
         .single();
 
       if (dbError) throw dbError;
 
-      // 2. Optimistic UI update
+      // 3. Optimistic UI update
       setMessages(prev => prev.find(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
 
-      // 3. Trigger WhatsApp delivery via Edge Function (best-effort)
-      const { error: fnError } = await supabase.functions.invoke('whatsapp-webhook', {
-        body: {
-          manual: true,
-          leadId: activeLead.id,
-          message: textToSend
-        },
-        headers: {
-          'x-interakt-secret': 'mysecret123'
-        }
-      });
-
-      if (fnError) {
-        console.warn('WhatsApp delivery via Interakt failed:', fnError.message);
+      // 4. Trigger WhatsApp text delivery (best-effort, media URL appended if present)
+      const waText = [textToSend, mediaUrl].filter(Boolean).join('\n');
+      if (waText) {
+        const { error: fnError } = await supabase.functions.invoke('whatsapp-webhook', {
+          body: { manual: true, leadId: activeLead.id, message: waText },
+          headers: { 'x-interakt-secret': 'mysecret123' },
+        });
+        if (fnError) console.warn('WhatsApp delivery failed:', fnError.message);
       }
 
     } catch (err) {
@@ -110,6 +128,44 @@ export default function MessagesPage() {
       setIsSending(false);
     }
   };
+
+  // ── File Attachment ──────────────────────────────────────────────────────────
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!fileInputRef.current) return;
+    fileInputRef.current.value = '';          // reset so same file can be re-selected
+    if (!file) return;
+
+    const mediaType = ACCEPTED_TYPES[file.type];
+    if (!mediaType) {
+      alert('Unsupported file type. Please select an image (JPG/PNG/GIF/WEBP), video (MP4/WEBM) or PDF.');
+      return;
+    }
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      alert(`File too large. Maximum allowed size is ${MAX_SIZE_MB} MB.`);
+      return;
+    }
+
+    const previewUrl = mediaType === 'image' ? URL.createObjectURL(file) : null;
+    setAttachment({ file, previewUrl, mediaType, name: file.name });
+  };
+
+  const removeAttachment = () => {
+    if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+    setAttachment(null);
+  };
+
+  const uploadAttachment = async (leadId, file, mediaType) => {
+    const ext = file.name.split('.').pop();
+    const path = `messages/${leadId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from('crm-attachments')
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (error) throw error;
+    const { data } = supabase.storage.from('crm-attachments').getPublicUrl(path);
+    return data.publicUrl;
+  };
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const openWhatsAppFallback = () => {
     if (!activeLead?.phone) return;
@@ -124,6 +180,13 @@ export default function MessagesPage() {
         @media(max-width:700px){.messages-layout{grid-template-columns:1fr!important}}
         .msg-outbound { background: var(--gradient); color: #fff; align-self: flex-end; border-radius: 14px 14px 0 14px; }
         .msg-inbound { background: #fff; color: var(--text-dark); align-self: flex-start; border-radius: 14px 14px 14px 0; border: 1px solid var(--border); }
+        .msg-media-img { max-width: 220px; border-radius: 10px; display: block; margin-bottom: 6px; cursor: pointer; }
+        .msg-media-video { max-width: 260px; border-radius: 10px; display: block; margin-bottom: 6px; }
+        .msg-pdf-link { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; text-decoration: none; background: rgba(0,0,0,0.08); padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; }
+        .attach-preview { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(255,102,0,0.06); border-top: 1px solid var(--border); }
+        .attach-thumb { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; }
+        .btn-attach { background: none; border: 1.5px solid var(--border); border-radius: 10px; padding: 0 12px; height: 46px; cursor: pointer; display: flex; align-items: center; color: var(--text-muted); transition: border-color .2s; }
+        .btn-attach:hover { border-color: var(--primary); color: var(--primary); }
       `}</style>
 
       {/* Leads List */}
@@ -204,7 +267,36 @@ export default function MessagesPage() {
                     maxWidth: '75%', padding: '10px 14px', position: 'relative',
                     boxShadow: '0 2px 5px rgba(0,0,0,0.04)',
                   }}>
-                    <div style={{ fontSize: 13, lineHeight: 1.5 }}>{msg.text || msg.message_text}</div>
+                    {/* Media attachment */}
+                    {msg.media_url && msg.media_type === 'image' && (
+                      <img
+                        src={msg.media_url}
+                        alt="attachment"
+                        className="msg-media-img"
+                        onClick={() => window.open(msg.media_url, '_blank', 'noopener,noreferrer')}
+                      />
+                    )}
+                    {msg.media_url && msg.media_type === 'video' && (
+                      <video src={msg.media_url} controls className="msg-media-video" />
+                    )}
+                    {msg.media_url && msg.media_type === 'pdf' && (
+                      <a href={msg.media_url} target="_blank" rel="noopener noreferrer"
+                        className="msg-pdf-link"
+                        style={{ color: msg.direction === 'outgoing' ? '#fff' : 'var(--primary)' }}>
+                        <MdPictureAsPdf size={18} /> View PDF
+                      </a>
+                    )}
+                    {msg.media_url && !['image','video','pdf'].includes(msg.media_type) && (
+                      <a href={msg.media_url} target="_blank" rel="noopener noreferrer"
+                        className="msg-pdf-link"
+                        style={{ color: msg.direction === 'outgoing' ? '#fff' : 'var(--primary)' }}>
+                        <MdInsertDriveFile size={18} /> Download File
+                      </a>
+                    )}
+                    {/* Text */}
+                    {(msg.text || msg.message_text) && (
+                      <div style={{ fontSize: 13, lineHeight: 1.5 }}>{msg.text || msg.message_text}</div>
+                    )}
                     <div style={{ fontSize: 9, marginTop: 4, textAlign: 'right', opacity: 0.8 }}>
                       {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                     </div>
@@ -215,24 +307,67 @@ export default function MessagesPage() {
             </div>
 
             {/* Input Overlay */}
-            <form onSubmit={sendMessage} style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', background: '#fff', display: 'flex', gap: 10 }}>
-              <input
-                className="form-input"
-                placeholder={`Chat with ${activeLead.name.split(' ')[0]}...`}
-                style={{ flex: 1, height: 46 }}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-              />
-              <button 
-                type="submit" 
-                className="btn btn-primary" 
-                style={{ height: 46, padding: '0 20px' }}
-                disabled={!input.trim() || isSending}
-              >
-                <MdSend size={20} style={{ marginRight: 8 }} />
-                {isSending ? 'Sending...' : 'Send'}
-              </button>
-            </form>
+            <div style={{ borderTop: '1px solid var(--border)', background: '#fff' }}>
+              {/* Attachment preview strip */}
+              {attachment && (
+                <div className="attach-preview">
+                  {attachment.mediaType === 'image' && (
+                    <img src={attachment.previewUrl} alt="preview" className="attach-thumb" />
+                  )}
+                  {attachment.mediaType === 'video' && (
+                    <div style={{ width: 42, height: 42, borderRadius: 8, background: 'var(--gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <MdInsertDriveFile size={20} color="#fff" />
+                    </div>
+                  )}
+                  {attachment.mediaType === 'pdf' && (
+                    <div style={{ width: 42, height: 42, borderRadius: 8, background: '#e53935', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <MdPictureAsPdf size={20} color="#fff" />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
+                    {attachment.name}
+                  </div>
+                  <button onClick={removeAttachment} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
+                    <MdClose size={18} />
+                  </button>
+                </div>
+              )}
+              <form onSubmit={sendMessage} style={{ padding: '12px 20px', display: 'flex', gap: 10, alignItems: 'center' }}>
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm,application/pdf"
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelect}
+                />
+                {/* Attach button */}
+                <button
+                  type="button"
+                  className="btn-attach"
+                  title="Attach image, video or PDF (max 20 MB)"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <MdAttachFile size={20} />
+                </button>
+                <input
+                  className="form-input"
+                  placeholder={`Chat with ${activeLead.name.split(' ')[0]}...`}
+                  style={{ flex: 1, height: 46 }}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                />
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ height: 46, padding: '0 20px' }}
+                  disabled={(!input.trim() && !attachment) || isSending}
+                >
+                  <MdSend size={20} style={{ marginRight: 8 }} />
+                  {isSending ? 'Sending...' : 'Send'}
+                </button>
+              </form>
+            </div>
           </>
         )}
       </div>

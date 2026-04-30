@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FaWhatsapp } from 'react-icons/fa';
+import { MdAttachFile, MdLink, MdClose, MdPictureAsPdf, MdImage, MdVideoLibrary } from 'react-icons/md';
 import { useLeads } from '../hooks/useLeads';
 import { useSearchParams } from 'react-router-dom';
+import { supabase } from '../supabaseClient';
 
 const templates = [
   {
@@ -71,6 +73,58 @@ export default function WhatsAppPage() {
   const [activeTemplate, setActiveTemplate] = useState(0);
   const [lang, setLang] = useState('marathi');
   const [message, setMessage] = useState(templates[0].marathi.replace('{name}', 'Ma\'am'));
+  // Media attachment
+  const [mediaTab, setMediaTab] = useState('upload'); // 'upload' | 'link'
+  const [mediaFile, setMediaFile] = useState(null);   // { file, previewUrl, type, name }
+  const [mediaLink, setMediaLink] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadedUrl, setUploadedUrl] = useState('');
+  const fileInputRef = useRef(null);
+
+  const MEDIA_TYPES = {
+    'image/jpeg': 'image', 'image/png': 'image', 'image/gif': 'image', 'image/webp': 'image',
+    'video/mp4': 'video', 'video/quicktime': 'video', 'video/webm': 'video',
+    'application/pdf': 'pdf',
+  };
+
+  const handleMediaFile = (e) => {
+    const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!file) return;
+    const type = MEDIA_TYPES[file.type];
+    if (!type) { alert('Unsupported format. Use JPG, PNG, GIF, WEBP, MP4, WEBM or PDF.'); return; }
+    if (file.size > 20 * 1024 * 1024) { alert('File too large. Maximum 20 MB allowed.'); return; }
+    const previewUrl = type === 'image' ? URL.createObjectURL(file) : null;
+    setMediaFile({ file, previewUrl, type, name: file.name });
+    setUploadedUrl('');
+  };
+
+  const removeMediaFile = () => {
+    if (mediaFile?.previewUrl) URL.revokeObjectURL(mediaFile.previewUrl);
+    setMediaFile(null);
+    setUploadedUrl('');
+  };
+
+  const uploadMedia = async () => {
+    if (!mediaFile) return '';
+    setUploading(true);
+    try {
+      const ext = mediaFile.file.name.split('.').pop();
+      const path = `whatsapp/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from('crm-attachments')
+        .upload(path, mediaFile.file, { contentType: mediaFile.file.type });
+      if (error) throw error;
+      const { data } = supabase.storage.from('crm-attachments').getPublicUrl(path);
+      setUploadedUrl(data.publicUrl);
+      return data.publicUrl;
+    } catch (err) {
+      alert('Upload failed: ' + err.message);
+      return '';
+    } finally {
+      setUploading(false);
+    }
+  };
 
   // Effect to handle URL parameters
   useEffect(() => {
@@ -106,9 +160,13 @@ export default function WhatsAppPage() {
     setMessage(templates[activeTemplate][lang].replace('{name}', n || 'Ma\'am'));
   };
 
-  const sendWhatsApp = () => {
+  const sendWhatsApp = async () => {
     if (!phone) return;
-    const msg = encodeURIComponent(message);
+    let finalMsg = message;
+    // Append media
+    const link = mediaTab === 'link' ? mediaLink.trim() : (uploadedUrl || (mediaFile ? await uploadMedia() : ''));
+    if (link) finalMsg = finalMsg + '\n\n' + link;
+    const msg = encodeURIComponent(finalMsg);
     const num = phone.startsWith('+') ? phone.replace(/\D/g, '') : `91${phone.replace(/\D/g, '')}`;
     window.open(`https://wa.me/${num}?text=${msg}`, '_blank', 'noopener,noreferrer');
   };
@@ -223,10 +281,73 @@ export default function WhatsAppPage() {
               value={message} onChange={e => setMessage(e.target.value)} />
           </div>
 
+          {/* ── Media Attachment ── */}
+          <div style={{ border: '1.5px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+            {/* Tab bar */}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: 'var(--bg-light)' }}>
+              {[{ id: 'upload', icon: <MdAttachFile size={14}/>, label: 'Upload File' },
+                { id: 'link',   icon: <MdLink size={14}/>,       label: 'Add Link'    }].map(tab => (
+                <button key={tab.id} onClick={() => setMediaTab(tab.id)} style={{
+                  flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  background: mediaTab === tab.id ? '#fff' : 'transparent',
+                  color: mediaTab === tab.id ? 'var(--primary)' : 'var(--text-muted)',
+                  borderBottom: mediaTab === tab.id ? '2px solid var(--primary)' : '2px solid transparent',
+                }}>{tab.icon}{tab.label}</button>
+              ))}
+            </div>
+
+            <div style={{ padding: '12px 14px' }}>
+              {mediaTab === 'upload' ? (
+                mediaFile ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {mediaFile.type === 'image' && (
+                      <img src={mediaFile.previewUrl} alt="preview" style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover' }} />
+                    )}
+                    {mediaFile.type === 'video' && (
+                      <div style={{ width: 48, height: 48, borderRadius: 8, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <MdVideoLibrary size={22} color="#fff" />
+                      </div>
+                    )}
+                    {mediaFile.type === 'pdf' && (
+                      <div style={{ width: 48, height: 48, borderRadius: 8, background: '#e53935', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <MdPictureAsPdf size={22} color="#fff" />
+                      </div>
+                    )}
+                    <div style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
+                      {uploadedUrl ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✓ Uploaded</span> : mediaFile.name}
+                    </div>
+                    <button onClick={removeMediaFile} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
+                      <MdClose size={18} />
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <input ref={fileInputRef} type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm,application/pdf"
+                      style={{ display: 'none' }} onChange={handleMediaFile} />
+                    <button type="button" onClick={() => fileInputRef.current?.click()}
+                      style={{ width: '100%', padding: '10px', border: '2px dashed var(--border)', borderRadius: 10,
+                        background: 'transparent', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <MdImage size={16} /> <MdVideoLibrary size={16} /> <MdPictureAsPdf size={16} />
+                      &nbsp;Click to attach Banner / Video / PDF (max 20 MB)
+                    </button>
+                  </div>
+                )
+              ) : (
+                <input className="form-input" style={{ height: 40, fontSize: 12 }}
+                  placeholder="Paste YouTube, Drive, or any public link…"
+                  value={mediaLink} onChange={e => setMediaLink(e.target.value)} />
+              )}
+            </div>
+          </div>
+
           <button className="btn btn-whatsapp" onClick={sendWhatsApp}
+            disabled={uploading}
             style={{ justifyContent: 'center', opacity: phone ? 1 : 0.6 }}>
             <FaWhatsapp style={{ fontSize: 18 }} />
-            Send on WhatsApp
+            {uploading ? 'Uploading...' : 'Send on WhatsApp'}
           </button>
         </div>
 
@@ -235,6 +356,24 @@ export default function WhatsAppPage() {
           <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Message Preview</h2>
           <div className="wa-preview">
             <div className="wa-bubble">
+              {/* Media preview in bubble */}
+              {mediaTab === 'upload' && mediaFile && mediaFile.type === 'image' && (
+                <img src={mediaFile.previewUrl} alt="attachment preview"
+                  style={{ width: '100%', borderRadius: 8, marginBottom: 8, display: 'block' }} />
+              )}
+              {mediaTab === 'upload' && mediaFile && mediaFile.type !== 'image' && (
+                <div style={{ background: 'rgba(0,0,0,0.07)', borderRadius: 8, padding: '8px 10px',
+                  marginBottom: 8, fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {mediaFile.type === 'video' ? <MdVideoLibrary size={16}/> : <MdPictureAsPdf size={16}/>}
+                  {mediaFile.name}
+                </div>
+              )}
+              {mediaTab === 'link' && mediaLink && (
+                <div style={{ background: 'rgba(0,0,0,0.07)', borderRadius: 8, padding: '8px 10px',
+                  marginBottom: 8, fontSize: 11, wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <MdLink size={14}/> {mediaLink}
+                </div>
+              )}
               <div style={{ whiteSpace: 'pre-wrap' }}>{message}</div>
               <div className="wa-time">
                 {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} ✓✓
