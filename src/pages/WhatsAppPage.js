@@ -133,27 +133,6 @@ export default function WhatsAppPage() {
     setUploadedUrl('');
   };
 
-  const uploadMedia = async () => {
-    if (!mediaFile) return '';
-    setUploading(true);
-    try {
-      const ext = mediaFile.file.name.split('.').pop();
-      const path = `whatsapp/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage
-        .from('crm-attachments')
-        .upload(path, mediaFile.file, { contentType: mediaFile.file.type });
-      if (error) throw error;
-      const { data } = supabase.storage.from('crm-attachments').getPublicUrl(path);
-      setUploadedUrl(data.publicUrl);
-      return data.publicUrl;
-    } catch (err) {
-      alert('Upload failed: ' + err.message);
-      return '';
-    } finally {
-      setUploading(false);
-    }
-  };
-
   // Effect to handle URL parameters
   useEffect(() => {
     const pName = searchParams.get('name');
