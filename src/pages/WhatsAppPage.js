@@ -14,6 +14,13 @@ const templates = [
     marathi: `Hi {name}! 😊\n\nAaj tumshi abacus & vedic maths teaching program babat bolun chhan vatla.\n\nHe program tumhala gharbaslya income start karayla help karto (₹20–50k/month potential).\n\n👉 Training + study material + support sagla include aahe.\n\nMi details pathavtoy 👇\n_(Brochure / video insert kara)_\n\nKahi doubt asel tar nakki vichara 👍\n\n– Shraddha Institute`,
   },
   {
+    label: 'Workshop Invite',
+    icon: '🎓',
+    stage: 'Special',
+    english: `Hi {name}! 🌟\n\nSuvransasdhi! 🌟\nDo you want to start your own class or build a stable income from home?\n\n👉 The Abacus & Vedic Maths Teacher Training Workshop is for you!\n\n📚 In this FREE online workshop you’ll learn:\n✅ What Abacus and Vedic Maths really are\n✅ How you can build a career with them\n✅ How to start your own class/institute\n✅ Simple marketing tricks to attract students\n✅ The full support system from Shraddha Institute\n\n💡 No experience needed\n💡 Start working from home\n\n📅 Date: 03/05/2026 (Sunday)\n⏰ Time: 5:00 PM\n📍 Platform: Zoom (Online)\n\n🎁 Bonus: special offer and guidance for attendees\n\n👉 Limited seats — reserve your spot today!\n\nJoin the workshop here: [Zoom Link]\n\n– Shraddha Institute`,
+    marathi: `Hi {name}! 🌟\n\nसुवर्णसंधी! 🌟\nतुम्हाला स्वतःचा क्लास सुरू करायचा आहे का किंवा घरबसल्या stable income source निर्माण करायचा आहे का?\n\n👉 मग Abacus आणि Vedic Maths Teacher Training Workshop तुमच्यासाठीच आहे!\n\n📚 या FREE Online Workshop मध्ये तुम्हाला कळणार –\n✅ Abacus आणि Vedic Maths म्हणजे नेमकं काय?\n✅ यात करिअर कसं घडवू शकता?\n✅ स्वतःचा क्लास / इंस्टिट्यूट कसा सुरू करायचा?\n✅ विद्यार्थ्यांना attract करण्यासाठी सोप्या marketing tricks\n✅ Shraddha Institute कडून मिळणारे full support system\n\n💡 Zero experience असलं तरी चालेल!\n💡 घरबसल्या काम सुरू करण्याची संधी!\n\n📅 Date: 03/05/2026 (Sunday)\n⏰ Time: संध्याकाळी 5:00\n📍 Platform: Zoom (Online)\n\n🎁 Bonus: Workshop attend करणाऱ्यांना खास ऑफर आणि guidance मिळणार!\n\n👉 Limited Seats – आजच आपली जागा reserve करा!\n\nTo join the video meeting, click this link: https://meet.google.com/fnq-jrrq-noq\n\n– Shraddha Institute`,
+  },
+  {
     label: 'Value Build',
     icon: '🔥',
     stage: 'Stage 2',
@@ -80,6 +87,10 @@ export default function WhatsAppPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState('');
   const fileInputRef = useRef(null);
+  // Recipients
+  const [recipientMode, setRecipientMode] = useState('manual'); // 'manual' | 'multi'
+  const [selectedLeads, setSelectedLeads] = useState([]);
+  const [leadSearch, setLeadSearch] = useState('');
 
   const MEDIA_TYPES = {
     'image/jpeg': 'image', 'image/png': 'image', 'image/gif': 'image', 'image/webp': 'image',
@@ -87,7 +98,7 @@ export default function WhatsAppPage() {
     'application/pdf': 'pdf',
   };
 
-  const handleMediaFile = (e) => {
+  const handleMediaFile = async (e) => {
     const file = e.target.files?.[0];
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (!file) return;
@@ -97,6 +108,23 @@ export default function WhatsAppPage() {
     const previewUrl = type === 'image' ? URL.createObjectURL(file) : null;
     setMediaFile({ file, previewUrl, type, name: file.name });
     setUploadedUrl('');
+    // Auto-upload immediately so Send can be synchronous
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `whatsapp/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from('crm-attachments')
+        .upload(path, file, { contentType: file.type });
+      if (error) throw error;
+      const { data } = supabase.storage.from('crm-attachments').getPublicUrl(path);
+      setUploadedUrl(data.publicUrl);
+    } catch (err) {
+      alert('Upload failed: ' + err.message);
+      setMediaFile(null);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const removeMediaFile = () => {
@@ -160,24 +188,39 @@ export default function WhatsAppPage() {
     setMessage(templates[activeTemplate][lang].replace('{name}', n || 'Ma\'am'));
   };
 
-  const sendWhatsApp = async () => {
-    if (!phone) return;
-    let finalMsg = message;
-    // Append media
-    const link = mediaTab === 'link' ? mediaLink.trim() : (uploadedUrl || (mediaFile ? await uploadMedia() : ''));
-    if (link) finalMsg = finalMsg + '\n\n' + link;
-    const msg = encodeURIComponent(finalMsg);
-    const num = phone.startsWith('+') ? phone.replace(/\D/g, '') : `91${phone.replace(/\D/g, '')}`;
-    window.open(`https://wa.me/${num}?text=${msg}`, '_blank', 'noopener,noreferrer');
+  const sendWhatsApp = () => {
+    if (uploading) return;
+    const mediaUrl = mediaTab === 'link' ? mediaLink.trim() : uploadedUrl;
+    const buildMsg = (recipientName) => {
+      let msg = message.replace('{name}', recipientName || 'Ma\'am');
+      if (mediaUrl) msg += '\n\n' + mediaUrl;
+      return encodeURIComponent(msg);
+    };
+    if (recipientMode === 'multi') {
+      if (selectedLeads.length === 0) return;
+      selectedLeads.forEach(lead => {
+        const firstName = (lead.name || '').split(' ')[0] || 'Ma\'am';
+        const digits = (lead.phone || '').replace(/\D/g, '').slice(-10);
+        window.open(`https://wa.me/91${digits}?text=${buildMsg(firstName)}`, '_blank', 'noopener,noreferrer');
+      });
+    } else {
+      if (!phone) return;
+      const num = phone.startsWith('+') ? phone.replace(/\D/g, '') : `91${phone.replace(/\D/g, '')}`;
+      window.open(`https://wa.me/${num}?text=${buildMsg(name)}`, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const selectLead = (contact) => {
-    setName(contact.name);
-    setPhone(contact.phone.replace(/\D/g, '').slice(-10));
-    const msg = templates[activeTemplate].message.replace('{name}', contact.name);
-    setMessage(msg);
-    // Scroll to top of compose section
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (recipientMode === 'multi') {
+      setSelectedLeads(prev =>
+        prev.find(l => l.id === contact.id) ? prev.filter(l => l.id !== contact.id) : [...prev, contact]
+      );
+    } else {
+      setName(contact.name);
+      setPhone((contact.phone || '').replace(/\D/g, '').slice(-10));
+      setMessage(templates[activeTemplate][lang].replace('{name}', contact.name));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   return (
@@ -234,45 +277,117 @@ export default function WhatsAppPage() {
       <div className="wa-compose">
         {/* Compose */}
         <div className="content-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700 }}>Compose Message</h2>
-            {leads.length > 0 && (
-              <div style={{ position: 'relative' }}>
-                <select 
-                  className="form-input" 
-                  style={{ padding: '4px 10px', fontSize: 11, width: 'auto', height: 'auto', background: '#fff7ed', borderColor: '#fed7aa', fontWeight: 600 }}
-                  onChange={(e) => {
-                    const l = leads.find(lead => lead.id === e.target.value);
-                    if (l) selectLead(l);
-                  }}
-                  value=""
-                >
-                  <option value="" disabled>🔍 Select Lead</option>
-                  {leads.map(l => (
-                    <option key={l.id} value={l.id}>{l.name} ({l.phone})</option>
-                  ))}
-                </select>
+          <h2 style={{ fontSize: 16, fontWeight: 700 }}>Compose Message</h2>
+
+          {/* ── Recipients ── */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-dark)' }}>Recipients</label>
+              <div style={{ display: 'flex', background: 'var(--bg-light)', borderRadius: 8, padding: 3, gap: 2 }}>
+                {[{ id: 'manual', label: 'Manual' },
+                  { id: 'multi',  label: `Select Leads${selectedLeads.length > 0 ? ` (${selectedLeads.length})` : ''}` }
+                ].map(tab => (
+                  <button key={tab.id} onClick={() => setRecipientMode(tab.id)} style={{
+                    padding: '4px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                    background: recipientMode === tab.id ? '#fff' : 'transparent',
+                    color: recipientMode === tab.id ? 'var(--primary)' : 'var(--text-muted)',
+                    boxShadow: recipientMode === tab.id ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.15s',
+                  }}>{tab.label}</button>
+                ))}
+              </div>
+            </div>
+
+            {recipientMode === 'manual' ? (
+              <>
+                <div className="form-group" style={{ marginBottom: 10 }}>
+                  <label>Recipient Name</label>
+                  <input className="form-input" placeholder="Student name (optional)"
+                    value={name} onChange={e => updateName(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Phone Number *</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{
+                      padding: '11px 14px', background: 'var(--bg-light)', border: '1.5px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap'
+                    }}>+91</div>
+                    <input className="form-input" placeholder="10-digit number" style={{ flex: 1 }}
+                      value={phone} onChange={e => setPhone(e.target.value)} maxLength={10} />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div>
+                <input className="form-input" placeholder="🔍 Search leads by name or phone…"
+                  style={{ marginBottom: 8, height: 38, fontSize: 12 }}
+                  value={leadSearch} onChange={e => setLeadSearch(e.target.value)} />
+                {(() => {
+                  const filtered = leads.filter(l => l.name && l.phone && (
+                    !leadSearch ||
+                    l.name.toLowerCase().includes(leadSearch.toLowerCase()) ||
+                    l.phone.includes(leadSearch)
+                  ));
+                  const allSelected = filtered.length > 0 && filtered.every(l => selectedLeads.find(s => s.id === l.id));
+                  return (
+                    <div style={{ maxHeight: 220, overflowY: 'auto', border: '1.5px solid var(--border)', borderRadius: 10 }}>
+                      {/* Select All row */}
+                      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)',
+                        display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-light)',
+                        position: 'sticky', top: 0, zIndex: 1 }}>
+                        <input type="checkbox" checked={allSelected}
+                          onChange={e => setSelectedLeads(e.target.checked
+                            ? [...selectedLeads.filter(s => !filtered.find(f => f.id === s.id)), ...filtered]
+                            : selectedLeads.filter(s => !filtered.find(f => f.id === s.id))
+                          )}
+                          style={{ cursor: 'pointer', accentColor: 'var(--primary)', width: 14, height: 14 }}
+                        />
+                        <span style={{ fontSize: 12, fontWeight: 700, flex: 1 }}>
+                          {selectedLeads.length > 0
+                            ? `${selectedLeads.length} lead${selectedLeads.length > 1 ? 's' : ''} selected`
+                            : `Select All (${filtered.length})`}
+                        </span>
+                        {selectedLeads.length > 0 && (
+                          <button onClick={() => setSelectedLeads([])} style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'var(--primary)', fontSize: 11, fontWeight: 700, padding: 0
+                          }}>Clear all</button>
+                        )}
+                      </div>
+                      {filtered.length === 0 ? (
+                        <div style={{ padding: 20, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>No leads found</div>
+                      ) : filtered.map(lead => {
+                        const isSel = !!selectedLeads.find(s => s.id === lead.id);
+                        return (
+                          <div key={lead.id}
+                            onClick={() => setSelectedLeads(prev =>
+                              isSel ? prev.filter(l => l.id !== lead.id) : [...prev, lead]
+                            )}
+                            style={{
+                              padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10,
+                              cursor: 'pointer', borderBottom: '1px solid rgba(0,0,0,0.03)',
+                              background: isSel ? 'rgba(255,102,0,0.05)' : 'transparent', transition: 'background 0.12s',
+                            }}>
+                            <input type="checkbox" checked={isSel} readOnly
+                              style={{ cursor: 'pointer', accentColor: 'var(--primary)', width: 14, height: 14 }} />
+                            <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--gradient)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                              {(lead.name || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.name}</div>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>+91 {lead.phone}</div>
+                            </div>
+                            {isSel && <span style={{ color: 'var(--primary)', fontSize: 14, fontWeight: 700 }}>✓</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             )}
-          </div>
-
-          <div className="form-group">
-            <label>Recipient Name</label>
-            <input className="form-input" placeholder="Student name (optional)"
-              value={name} onChange={e => updateName(e.target.value)} />
-          </div>
-
-          <div className="form-group">
-            <label>Phone Number *</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{
-                padding: '11px 14px', background: 'var(--bg-light)', border: '1.5px solid var(--border)',
-                borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)',
-                whiteSpace: 'nowrap'
-              }}>+91</div>
-              <input className="form-input" placeholder="10-digit number" style={{ flex: 1 }}
-                value={phone} onChange={e => setPhone(e.target.value)} maxLength={10} />
-            </div>
           </div>
 
           <div className="form-group" style={{ flex: 1 }}>
@@ -343,12 +458,21 @@ export default function WhatsAppPage() {
             </div>
           </div>
 
-          <button className="btn btn-whatsapp" onClick={sendWhatsApp}
-            disabled={uploading}
-            style={{ justifyContent: 'center', opacity: phone ? 1 : 0.6 }}>
-            <FaWhatsapp style={{ fontSize: 18 }} />
-            {uploading ? 'Uploading...' : 'Send on WhatsApp'}
-          </button>
+          {(() => {
+            const disabled = uploading || (recipientMode === 'multi' ? selectedLeads.length === 0 : !phone);
+            const label = uploading ? 'Uploading…'
+              : recipientMode === 'multi' && selectedLeads.length > 0
+                ? `Send to ${selectedLeads.length} Lead${selectedLeads.length > 1 ? 's' : ''} on WhatsApp`
+                : 'Send on WhatsApp';
+            return (
+              <button className="btn btn-whatsapp" onClick={sendWhatsApp}
+                disabled={disabled}
+                style={{ justifyContent: 'center', opacity: disabled ? 0.55 : 1 }}>
+                <FaWhatsapp style={{ fontSize: 18 }} />
+                {label}
+              </button>
+            );
+          })()}
         </div>
 
         {/* Preview */}
