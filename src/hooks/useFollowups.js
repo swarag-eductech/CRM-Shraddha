@@ -10,8 +10,8 @@ export function useFollowups(leadId = null) {
   const [followups, setFollowups] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetch = useCallback(async () => {
-    setLoading(true);
+  const fetch = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     let q = supabase
       .from('ttp_followups')
       .select('*, ttp_leads(id, name, phone)')
@@ -29,7 +29,7 @@ export function useFollowups(leadId = null) {
     fetch();
     const ch = supabase
       .channel(`followups_hook_${leadId || 'all'}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_followups' }, fetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_followups' }, () => fetch(true))
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [fetch, leadId]);

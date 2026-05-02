@@ -142,9 +142,9 @@ export default function LeadsKanbanPage() {
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState(null);
 
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = useCallback(async (isBackground = false) => {
     if (authLoading) return;
-    setLoading(true);
+    if (!isBackground) setLoading(true);
     let query = supabase
       .from('ttp_leads')
       .select('id, name, phone, city, status, created_at, ttp_followups(id, next_followup_at, status)')
@@ -164,7 +164,7 @@ export default function LeadsKanbanPage() {
       .channel('kanban_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_leads' }, (payload) => {
         // Optimistic check: if it's an update and we already have it updated locally, ignore
-        fetchLeads();
+        fetchLeads(true);
       })
       .subscribe();
     return () => supabase.removeChannel(ch);

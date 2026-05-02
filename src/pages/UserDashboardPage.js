@@ -24,8 +24,8 @@ export default function UserDashboardPage() {
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
 
-  const fetchAll = useCallback(async (uid) => {
-    setLoading(true);
+  const fetchAll = useCallback(async (uid, isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const [pool, mine] = await Promise.all([getLeadPool(), getMyLeads(uid)]);
       setPoolLeads(pool);
@@ -49,7 +49,7 @@ export default function UserDashboardPage() {
       .channel('user_dash_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_leads' }, async () => {
         const { data: { user } } = await supabase.auth.getUser();
-        if (user) await fetchAll(user.id);
+        if (user) await fetchAll(user.id, true);
       })
       .subscribe();
     return () => supabase.removeChannel(ch);

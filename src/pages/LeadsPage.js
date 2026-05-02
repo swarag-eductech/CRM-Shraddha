@@ -695,15 +695,16 @@ export default function LeadsPage() {
     }
   };
 
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = useCallback(async (isBackground = false) => {
     if (authLoading) return;
-    setLoading(true); setError('');
+    if (!isBackground) setLoading(true);
+    setError('');
     let query = supabase
       .from('ttp_leads')
       .select('id, name, phone, email, city, source, lead_program, status, assigned_user_id, created_at, ttp_followups(id, followup_number, next_followup_at, note, reminder_sent, status, is_deleted)')
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })
-      .limit(300);
+      .limit(100); // Reduced from 300 — keeps payloads fast
     if (!isAdmin && userId) {
       query = query.eq('assigned_user_id', userId);
     }
@@ -740,7 +741,7 @@ export default function LeadsPage() {
     fetchLeads();
     const ch = supabase
       .channel('leads_page')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_leads' }, () => fetchLeads())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_leads' }, () => fetchLeads(true))
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [fetchLeads]);
@@ -810,7 +811,7 @@ export default function LeadsPage() {
             <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>{loading ? 'Loading from database...' : `${filtered.length} of ${leads.length} leads`}</p>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary btn-sm" onClick={fetchLeads} disabled={loading}><MdRefresh /> Refresh</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => fetchLeads(false)} disabled={loading}><MdRefresh /> Refresh</button>
             <button className="btn btn-primary" onClick={() => setShowModal(true)}><MdAdd /> Add Lead</button>
           </div>
         </div>
@@ -818,7 +819,7 @@ export default function LeadsPage() {
         {error && (
           <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#dc2626', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>⚠️ {error}</span>
-            <button className="btn btn-secondary btn-sm" onClick={fetchLeads}>Retry</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => fetchLeads(false)}>Retry</button>
           </div>
         )}
 

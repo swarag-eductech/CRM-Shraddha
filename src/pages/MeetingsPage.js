@@ -42,8 +42,8 @@ export default function MeetingsPage() {
   // Reminder stats (live count from ttp_meeting_notifications)
   const [reminderSentCount, setReminderSentCount] = useState(0);
 
-  const fetchAll = async () => {
-    setLoading(true);
+  const fetchAll = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     const [leadRes, meetRes, notifRes] = await Promise.all([
       supabase.from('ttp_leads').select('id, name, phone, email').order('name'),
       supabase
@@ -66,13 +66,13 @@ export default function MeetingsPage() {
     fetchAll();
     const ch = supabase
       .channel('meetings_page_rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_meetings' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_meetings' }, () => fetchAll(true))
       .subscribe();
 
     // Also subscribe to ttp_meeting_notifications so stats update the moment cron sends a reminder
     const chNotif = supabase
       .channel('meeting_notifs_rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ttp_meeting_notifications' }, () => fetchAll())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ttp_meeting_notifications' }, () => fetchAll(true))
       .subscribe();
 
     // Tick every 60s — recalculates countdown timers and meeting status live

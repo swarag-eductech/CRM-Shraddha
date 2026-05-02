@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import Sidebar from './components/Sidebar';
@@ -6,8 +6,11 @@ import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/AdminLoginPage';
 
+// Critical pages — loaded eagerly so no chunk-download delay on first click
 const DashboardPage    = lazy(() => import('./pages/DashboardPage'));
 const LeadsPage        = lazy(() => import('./pages/LeadsPage'));
+
+// Secondary pages — lazy loaded (downloaded only when first visited)
 const MeetingsPage     = lazy(() => import('./pages/MeetingsPage'));
 const WhatsAppPage     = lazy(() => import('./pages/WhatsAppPage'));
 const MessagesPage     = lazy(() => import('./pages/MessagesPage'));
@@ -18,6 +21,22 @@ const AnalyticsPage    = lazy(() => import('./pages/AnalyticsPage'));
 const AdminDashboard   = lazy(() => import('./pages/AdminDashboard'));
 const LeadPoolPage          = lazy(() => import('./pages/LeadPoolPage'));
 const TeacherSupportPage    = lazy(() => import('./pages/TeacherSupportPage'));
+
+// Prefetch secondary chunks in the background after the app is idle.
+// This means by the time the user clicks "Meetings" or "Tasks", the
+// JavaScript chunk is already in the browser cache — zero wait time.
+function usePrefetchPages() {
+  useEffect(() => {
+    const id = requestIdleCallback(() => {
+      import('./pages/MeetingsPage');
+      import('./pages/TodayTasksPage');
+      import('./pages/LeadsKanbanPage');
+      import('./pages/LeadPoolPage');
+      import('./pages/TeacherSupportPage');
+    });
+    return () => cancelIdleCallback(id);
+  }, []);
+}
 
 function Layout({ children, activePage, mobileOpen, setMobileOpen }) {
   return (
@@ -41,6 +60,9 @@ function Layout({ children, activePage, mobileOpen, setMobileOpen }) {
 
 function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Kick off background download of secondary page chunks while the user
+  // is viewing the dashboard — so navigation is instant when they click.
+  usePrefetchPages();
 
   return (
     <BrowserRouter>

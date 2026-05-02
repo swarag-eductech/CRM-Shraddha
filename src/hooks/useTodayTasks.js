@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 
 export function useTodayTasks() {
   const [followups, setFollowups] = useState([]);
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const debounceRef = useRef(null);
 
-  const fetchTodayTasks = useCallback(async () => {
-    setLoading(true);
+  const fetchTodayTasks = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
     const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59).toISOString();
@@ -38,23 +39,24 @@ export function useTodayTasks() {
   useEffect(() => {
     fetchTodayTasks();
 
-    // Realtime for followups
+    const triggerDebounced = () => {
+      // Collapse rapid realtime events into one fetch, 500ms after the last event
+      clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => fetchTodayTasks(true), 500);
+    };
+
     const followupChannel = supabase
       .channel('today_followups')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_followups' }, () => {
-        fetchTodayTasks();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_followups' }, triggerDebounced)
       .subscribe();
 
-    // Realtime for meetings
     const meetingChannel = supabase
       .channel('today_meetings')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_meetings' }, () => {
-        fetchTodayTasks();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_meetings' }, triggerDebounced)
       .subscribe();
 
     return () => {
+      clearTimeout(debounceRef.current);
       supabase.removeChannel(followupChannel);
       supabase.removeChannel(meetingChannel);
     };

@@ -16,8 +16,8 @@ export function useTeacherSupport({ issueTypeFilter = 'all', statusFilter = 'all
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
 
-  const fetchIssues = useCallback(async () => {
-    setLoading(true);
+  const fetchIssues = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     setError('');
     let query = supabase
       .from('ttp_teacher_support')
@@ -48,7 +48,7 @@ export function useTeacherSupport({ issueTypeFilter = 'all', statusFilter = 'all
     const channel = supabase
       .channel('ttp_teacher_support_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_teacher_support' }, () => {
-        fetchIssues();
+        fetchIssues(true);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };

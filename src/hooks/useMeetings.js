@@ -5,8 +5,8 @@ export function useMeetings() {
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetch = useCallback(async () => {
-    setLoading(true);
+  const fetch = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     const { data } = await supabase
       .from('ttp_meetings')
       .select('*, ttp_leads(id, name, phone)')
@@ -20,7 +20,7 @@ export function useMeetings() {
     fetch();
     const ch = supabase
       .channel('meetings_hook')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_meetings' }, fetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ttp_meetings' }, () => fetch(true))
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [fetch]);
